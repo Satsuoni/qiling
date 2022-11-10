@@ -6,6 +6,7 @@
 from typing import Any, Mapping, MutableMapping, Union
 
 from unicorn import Uc
+from qiling.const import QL_ARCH
 
 class QlRegisterManager:
     """This class exposes the ql.arch.regs features that allows you to directly access
@@ -26,7 +27,7 @@ class QlRegisterManager:
         # getattr upon init. if it did, it would go into an endless recursion
         self.register_mapping: Mapping[str, int]
         super().__setattr__('register_mapping', regs_map)
-
+        print(regs_map)
         self.uc = uc
         self.uc_pc = self.register_mapping[pc_reg]
         self.uc_sp = self.register_mapping[sp_reg]
@@ -50,7 +51,33 @@ class QlRegisterManager:
         else:
             super().__setattr__(name, value)
 
-
+    def read_sp(self, arch):
+        bits=self.uc.reg_read(self.register_mapping['eflags'])
+        if arch.type == QL_ARCH.X86 or  arch.type == QL_ARCH.X8664:
+          return bits & 0x0001 != 0
+        elif arch.type ==  QL_ARCH.ARM64:
+           return bits & 0x20000000 != 0  
+        else:
+            print("Unsupported")
+            return False
+    def set_sp(self, arch,val):
+        bits=self.uc.reg_read(self.register_mapping['eflags'])
+       # print(f"sp: {bits}")
+        if arch.type == QL_ARCH.X86 or  arch.type == QL_ARCH.X8664:
+           if val:
+             bits |= 0x0001 
+           else:
+             if (bits& 0x0001)!=0:
+                bits-=0x0001
+        elif arch.type ==  QL_ARCH.ARM64:
+           if val:
+             bits |= 0x20000000 
+           else:
+             if (bits& 0x20000000)!=0:
+                bits-=0x20000000
+        else:
+            print("Unsupported")
+        self.uc.reg_write(self.register_mapping['eflags'],bits)
     # read register
     def read(self, register: Union[str, int]):
         """Read a register value.

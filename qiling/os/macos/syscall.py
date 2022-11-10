@@ -4,7 +4,7 @@
 #
 
 import struct
-
+from unicorn import UcError
 from qiling.exception import *
 from qiling.const import *
 from qiling.arch.x86_const import *
@@ -25,7 +25,7 @@ from .utils import *
 ################
 # ios syscall #
 ################
-
+__global_shared_region=None
 def ql_syscall_fgetattrlist(ql, fd, alist, attributeBuffer, bufferSize, options, *args, **kw):
     ql.log.debug("fgetattrlist(fd: 0x%x, alist: 0x%x, attributeBuffer: 0x%x, bufferSize: 0x%x, options: 0x%x)" % (
         fd, alist, attributeBuffer, bufferSize, options
@@ -82,7 +82,7 @@ def ql_syscall_kernelrpc_mach_vm_allocate_trap(ql, port, addr, size, flags, *arg
     ql.mem.map(mmap_address, mmap_end - mmap_address)
     ql.mem.write(mmap_address, b'\x00'*(mmap_end - mmap_address))
     ql.os.macho_task.min_offset = mmap_end
-    ql.log.debug("vm alloc form 0x%x to 0x%0x" % (mmap_address, mmap_end))
+    ql.log.debug("vm alloc from 0x%x to 0x%0x" % (mmap_address, mmap_end))
     ql.mem.write(addr, struct.pack("<Q", mmap_address))
     return 0
 
@@ -297,7 +297,14 @@ def ql_syscall_sysctlbyname(ql, name, namelen, old, oldlenp, new_arg, newlen):
 # check shared region if avalible , return not ready every time
 def ql_syscall_shared_region_check_np(ql, p, uap, retvalp, *args, **kw):
     ql.log.debug("shared_region_check_np(p: 0x%x, uap: 0x%x, retvalp: 0x%x) = 0x%x" % (p, uap, retvalp, EINVAL))
-    return EINVAL
+    global __global_shared_region
+    print(__global_shared_region)
+    if __global_shared_region is None:
+      return EINVAL
+    else:
+      ql.log.debug("Shared region found at 0x{:x}".format(__global_shared_region))
+      ql.mem.write(p, struct.pack("<Q",__global_shared_region))
+      return KERN_SUCCESS
 
 # 0x150
 def ql_syscall_proc_info(ql, callnum, pid, flavor, arg, buff, buffer_size):
@@ -382,6 +389,7 @@ def ql_syscall_open_nocancel(ql, filename, flags, mode, *args, **kw):
 
 # 0x1b6
 def ql_syscall_shared_region_map_and_slide_np(ql, fd, count, mappings_addr, slide, slide_start, slide_size):
+    #extern "C" int __shared_region_map_and_slide_np(int fd, uint32_t count, const shared_file_mapping_np mappings[], long slide, const dyld_cache_slide_info2* slideInfo, size_t slideInfoSize);
     ql.log.debug("shared_region_map_and_slide_np(fd: %d, count: 0x%x, mappings: 0x%x, slide: 0x%x, slide_start: 0x%x, slide_size: 0x%x)" % (
                 fd, count ,mappings_addr, slide, slide_start, slide_size
             ))
@@ -395,6 +403,46 @@ def ql_syscall_shared_region_map_and_slide_np(ql, fd, count, mappings_addr, slid
         mappings_addr += mapping.size
         mapping_list.append(mapping)
     return slide_size
+"""
+struct shared_file_np {
+	int                     sf_fd;             /* file to be mapped into shared region */
+	uint32_t                sf_mappings_count; /* number of mappings */
+	uint32_t                sf_slide;          /* distance in bytes of the slide */
+};
+"""
+def ql_syscall_shared_region_map_and_slide_2_np(ql, count,files_addr,mappings_count, mappings_addr):
+    global __global_shared_region
+    #extern "C" int __shared_region_map_and_slide_2_np(uint32_t files_count, const shared_file_np files[], uint32_t mappings_count, const shared_file_mapping_slide_np mappings[]);
+    ql.log.debug("shared_region_map_and_slide_2_np( count: 0x%x, files: 0x%x, mappings_count: %d,mappings: 0x%x )" % (
+                count,files_addr,mappings_count, mappings_addr
+            ))
+    mapping_list = []
+    mp_offset=0
+    slide_size=0
+    for f in range(count):
+        fnp=SharedFileNp(ql)
+        fnp.read_sf(files_addr)
+        slide_size=fnp.sf_slide
+        for i in range(fnp.sf_mappings_count):
+            if mp_offset<mappings_count:
+                mapping = SharedFileMappingSlideNp(ql)
+                mapping.read_mapping(mappings_addr)  
+                ql.os.fd[fnp.sf_fd].seek(mapping.sms_file_offset)  
+                content = ql.os.fd[fnp.sf_fd].read(mapping.sms_size)
+                try:
+                  ql.mem.write(mapping.sms_address, content)
+                except UcError as e: 
+                  ql.mem.map(mapping.sms_address,mapping.sms_size)
+                  ql.mem.write(mapping.sms_address, content)
+                mapping_list.append(mapping)
+                mappings_addr += mapping.size
+                mp_offset+=1
+        files_addr+=fnp.size
+    if len(mapping_list) >0:
+        ql.log.debug("Setting global cache: 0x{:x}".format(mapping_list[0].sms_address))
+        __global_shared_region=mapping_list[0].sms_address
+    return slide_size
+
 
 # 0x1e3
 def ql_syscall_csrctl(ql, op, useraddr, usersize, *args, **kw):

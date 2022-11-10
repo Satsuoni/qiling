@@ -403,6 +403,7 @@ arm64_syscall_table = {
     492: 'microstackshot',
     493: 'grab_pgo_data',
     499: 'work_interval_ctl',
+    536: 'shared_region_map_and_slide_2_np',
 }
 
 x8664_syscall_table = {
@@ -751,6 +752,7 @@ x8664_syscall_table = {
     500: 'getentropy',
     520: 'terminate_with_payload',
     521: 'abort_with_payload',
+    536: 'shared_region_map_and_slide_2_np',
     0x100000a: 'kernelrpc_mach_vm_allocate_trap',
     0x100000c: 'kernelrpc_mach_vm_deallocate_trap',
     0x100000f: 'kernelrpc_mach_vm_map_trap',

@@ -114,7 +114,7 @@ class BranchPredictorX86(BranchPredictor, ArchX86):
                     if each_reg in new_line:
                         new_line = re.sub(each_reg, hex(self.read_reg(each_reg)), new_line)
 
-
+                new_line = new_line.replace("qword", " ")
                 prophecy.where = check_and_eval(new_line)
 
             elif line.op_str in self.ql.arch.regs.register_mapping:

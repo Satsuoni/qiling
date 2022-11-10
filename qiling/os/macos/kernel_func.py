@@ -48,7 +48,49 @@ class SharedFileMappingNp:
         self.ql.log.debug("[ShareFileMapping]: addr: 0x{:X}, size: 0x{:X}, fileOffset:0x{:X}, maxProt: {}, initProt: {}".format(
             self.sfm_address, self.sfm_size, self.sfm_file_offset, self.sfm_max_prot, self.sfm_init_prot
             ))
+"""
+struct shared_file_mapping_slide_np {
+	mach_vm_address_t       sms_address;     /* address at which to create mapping */
+	mach_vm_size_t          sms_size;        /* size of region to map */
+	mach_vm_offset_t        sms_file_offset; /* offset into file to be mapped */
+	user_addr_t             sms_slide_size;  /* size of data at sms_slide_start */
+	user_addr_t             sms_slide_start; /* address from which to get relocation data */
+	vm_prot_t               sms_max_prot;    /* protections, plus flags, see below */
+	vm_prot_t               sms_init_prot;
+};
+"""
+class SharedFileMappingSlideNp:
 
+    def __init__(self, ql):
+        self.size = 48
+        self.ql = ql
+    
+    def read_mapping(self, addr):
+        content = self.ql.mem.read(addr, self.size)
+        self.sms_address = unpack("<Q", self.ql.mem.read(addr, 8))[0]
+        self.sms_size = unpack("<Q", self.ql.mem.read(addr + 8, 8))[0]
+        self.sms_file_offset = unpack("<Q", self.ql.mem.read(addr + 16, 8))[0]
+        self.sms_slide_size = unpack("<Q", self.ql.mem.read(addr + 24, 8))[0]
+        self.sms_slide_start = unpack("<Q", self.ql.mem.read(addr + 32, 8))[0]
+        self.sms_max_prot = unpack("<L", self.ql.mem.read(addr + 40, 4))[0]
+        self.sms_init_prot = unpack("<L", self.ql.mem.read(addr + 44, 4))[0]
+        self.ql.log.debug("[SharedFileMappingSlideNp]: addr: 0x{:X}, size: 0x{:X}, fileOffset:0x{:X}, slidesize:{} slizestart:0x{:X} maxProt: {}, initProt: {}".format(
+            self.sms_address, self.sms_size, self.sms_file_offset, self.sms_slide_size, self.sms_slide_start,self.sms_max_prot, self.sms_init_prot
+            ))
+class SharedFileNp:
+
+    def __init__(self, ql):
+        self.size = 12
+        self.ql = ql
+    
+    def read_sf(self, addr):
+        content = self.ql.mem.read(addr, self.size)
+        self.sf_fd = unpack("<i", self.ql.mem.read(addr, 4))[0]
+        self.sf_mappings_count = unpack("<I", self.ql.mem.read(addr + 4, 4))[0]
+        self.sf_slide = unpack("<I", self.ql.mem.read(addr + 8, 4))[0]
+        self.ql.log.debug("[SharedFileNp]: fd: {}, sf_mappings_count: {}, sf_slide:0x{:X}".format(
+            self.sf_fd, self.sf_mappings_count, self.sf_slide
+            ))
 
 # reference to bsd/sys/proc_info.h
 class ProcRegionWithPathInfo():

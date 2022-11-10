@@ -308,7 +308,12 @@ class QlOsPosix(QlOs):
                     name = name.partition('_')[-1]
 
                 args.append((name, f'{value:#x}'))
-
+            if self.ql.os.type == QL_OS.MACOS or self.ql.os.type == QL_OS.FREEBSD:
+                if retval==-1:
+                    self.ql.arch.regs.set_sp(self.ql.arch,True)
+                else:
+                    self.ql.arch.regs.set_sp(self.ql.arch,False)
+                    
             sret = QlOsPosix.getNameFromErrorCode(retval)
             self.utils.print_function(self.ql.arch.regs.arch_pc, syscall_basename, args, sret, False)
 
