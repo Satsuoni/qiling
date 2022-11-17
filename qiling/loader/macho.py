@@ -116,7 +116,7 @@ class QlLoaderMACHO(QlLoader):
         self.ql.os.macho_task_server = MachTaskServer(self.ql)
         
         self.envs = env_dict_to_array(self.env)
-        self.apples = self.ql.os.path.transform_to_relative_path(self.ql.path)
+        self.apples = ["executable_path="+self.ql.os.path.transform_to_relative_path(self.ql.path),"ptr_munge=0x01"]
         self.ql.os.heap = QlMemoryHeap(self.ql, self.heap_address, self.heap_address + self.heap_size)
 
         # FIXME: Not working due to overlarge mapping, need to fix it
@@ -419,7 +419,7 @@ class QlLoaderMACHO(QlLoader):
             self.macho_entry = self.binary_entry + self.slide
             self.load_address = self.macho_entry
 
-        # load_commpage not wroking with ARM64, yet
+        # load_commpage not working with ARM64, yet
         if self.ql.arch.type == QL_ARCH.X8664:
             load_commpage(self.ql)
 
@@ -506,6 +506,9 @@ class QlLoaderMACHO(QlLoader):
         apple_ptr = []
 
         all_str = self.make_string(self.argvs, self.envs, self.apples)
+        self.ql.log.debug('argvs:  {}'.format(self.argvs))
+        self.ql.log.debug('Envs:  {}'.format(self.envs))
+        self.ql.log.debug('Apples:  {}'.format(self.apples))
         self.push_stack_string(all_str)
         ptr = self.stack_sp
 

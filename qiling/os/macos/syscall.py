@@ -278,12 +278,39 @@ def ql_syscall_getrlimit(ql, which, rlp, *args, **kw):
         ql.mem.write(rlp, b'\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x7F')  # rlim_max
         pass
     pass
-
+def sysctl_rdquad(ql,oldp, oldlenp, newp, val):
+    if oldlenp==0:
+        return -1
+    ln=struct.unpack("<Q",ql.mem.read(oldlenp,8))[0]
+    if ln<8:
+        return 
+    if newp!=0:
+        return -1
+    ql.mem.write(oldlenp,struct.pack("<Q",8))
+    ql.mem.write(oldp,struct.pack("<Q",val))
+    return 0
+    
+def ql_syscall_sysctl_kernel(ql, name, namelen, old, oldlenp, new_arg, newlen):
+    if namelen==0: return 0
+    nm=struct.unpack("<I",ql.mem.read(name,4))[0]
+    if nm==59:  #LP64 user stack query
+      ql.log.debug("LP64 user stack query")
+      return sysctl_rdquad(ql,old,oldlenp,new_arg,0xff00ff00ff00)
 # 0xca
 def ql_syscall_sysctl(ql, name, namelen, old, oldlenp, new_arg, newlen):
     ql.log.debug("sysctl(name: 0x%x, namelen: 0x%x, old: 0x%x, oldlenp: 0x%x, new: 0x%x, newlen: 0x%x)" % (
         name, namelen, old, oldlenp, new_arg, newlen
     ))
+    for r in range(namelen):
+        nm=ql.mem.read(name+r*4,4)
+        ql.log.debug("Name {} {}".format(r,struct.unpack("<I",nm)[0]))
+    if namelen>0:
+        nm=struct.unpack("<I",ql.mem.read(name,4))[0]
+        if nm==1: #Kernel
+            return ql_syscall_sysctl_kernel(ql,name+4,namelen-1, old, oldlenp, new_arg, newlen)
+        else:
+            ql.log.debug("Unimplemented sysctl") 
+
     return KERN_SUCCESS
 
 # 0x112
@@ -358,7 +385,42 @@ def ql_syscall_write_nocancel(ql, write_fd, write_buf, write_count, *args, **kw)
     #    ql.log.info(buf.decode(errors='ignore'))
     return 0
 
+def ql_syscall_read_nocancel(ql, fd,  buf,  nbytes):
+    ql.log.debug("ql_syscall_read_nocancel fd: {} buf: 0x{:x} nbytes: {}".format(fd,  buf,  nbytes))
+    if not fd in  ql.os.fd:
+        ql.log.debug("read_nocancel: invalid fd: {}".format(fd))
+        return -1
+    dat=ql.os.fd[fd].read(nbytes)
+    ql.mem.write(buf,dat)
+    return len(dat)
+def ql_syscall_close_nocancel(ql,fd):
+    return ql.os.fd[fd].close()
+def ql_syscall_shm_open(ql, filename, flags, mode, *args, **kw):
+    path = ql.mem.string(filename)
+    relative_path = ql.os.path.transform_to_relative_path(path)
 
+    flags = flags & 0xffffffff
+    mode = mode & 0xffffffff
+
+    idx = next((i for i in range(MAX_FD_SIZE + 1) if ql.os.fd[i] is None), -1)
+
+    if idx == -1:
+        regreturn = -1
+    else:
+        try:
+            if ql.arch.type == QL_ARCH.ARM:
+                mode = 0
+
+            ql.os.fd[idx] = ql.os.fs_mapper.open_ql_file(path, flags, mode)
+            regreturn = idx
+        except QlSyscallError:
+            regreturn = -1
+
+    if regreturn >= 0 and regreturn != 2:
+        ql.log.debug("File Found: %s" % relative_path)
+    else:
+        ql.log.debug("File Not Found %s" % relative_path)
+    return regreturn
 # 0x18e
 def ql_syscall_open_nocancel(ql, filename, flags, mode, *args, **kw):
     path = ql.mem.string(filename)
@@ -419,6 +481,7 @@ def ql_syscall_shared_region_map_and_slide_2_np(ql, count,files_addr,mappings_co
     mapping_list = []
     mp_offset=0
     slide_size=0
+    slides=[]
     for f in range(count):
         fnp=SharedFileNp(ql)
         fnp.read_sf(files_addr)
@@ -434,14 +497,33 @@ def ql_syscall_shared_region_map_and_slide_2_np(ql, count,files_addr,mappings_co
                 except UcError as e: 
                   ql.mem.map(mapping.sms_address,mapping.sms_size)
                   ql.mem.write(mapping.sms_address, content)
+                  #dyld hack...
+                if mapping.sms_slide_size>0:
+                    slides.append(mapping)
+                #if mapping.sms_address<=0x7ff841a6d4e0 and mapping.sms_address+mapping.sms_size>0x7ff841a6d4e0:
+                #    rdf=ql.mem.read(0x7ff841a6d4e0,0x38)
+                #    ql.log.debug(bytes(rdf).hex())
+                #    rstart=struct.unpack("<Q",ql.mem.read(0x7ff841a6d4e0+0x18,8))[0]
+                #    ralign=int(rstart/0x4000)*0x4000
+                #    ql.log.debug("trying to map 0x{:x} -> 0x{:x}".format(rstart,ralign))
+                    #ql.mem.map(ralign,mapping.sms_size)
+                  
                 mapping_list.append(mapping)
                 mappings_addr += mapping.size
                 mp_offset+=1
         files_addr+=fnp.size
+    if len(slides)>0:
+         ql.log.debug("Relocating mappings")
+    for sl in slides:
+        #rdf=ql.mem.read(sl[0],sl[1])
+        srs=SharedRegionSlideEntry(ql,sl.sms_slide_size)
+        srs.read_srs(sl.sms_slide_start)
+        srs.relocate(sl.sms_address,sl.sms_size)
+        #ql.log.debug(bytes(rdf).hex())
     if len(mapping_list) >0:
         ql.log.debug("Setting global cache: 0x{:x}".format(mapping_list[0].sms_address))
         __global_shared_region=mapping_list[0].sms_address
-    return slide_size
+    return 0#slide_size
 
 
 # 0x1e3
@@ -452,6 +534,7 @@ def ql_syscall_csrctl(ql, op, useraddr, usersize, *args, **kw):
 # 0x1f4
 def ql_syscall_getentropy(ql, buffer, size, *args, **kw):
     ql.log.debug("getentropy(buffer: 0x%x, size: 0x%x)" % (buffer, size))
+    ql.mem.write(buffer,b"\xab"*size)
     return KERN_SUCCESS
 
 # 0x208

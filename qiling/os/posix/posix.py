@@ -309,7 +309,7 @@ class QlOsPosix(QlOs):
 
                 args.append((name, f'{value:#x}'))
             if self.ql.os.type == QL_OS.MACOS or self.ql.os.type == QL_OS.FREEBSD:
-                if retval==-1:
+                if retval==-1 or retval==-2:
                     self.ql.arch.regs.set_sp(self.ql.arch,True)
                 else:
                     self.ql.arch.regs.set_sp(self.ql.arch,False)
