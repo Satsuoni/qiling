@@ -111,7 +111,7 @@ class MachPortManager():
         self.my_port = my_port
 
     def deal_with_msg(self, msg, addr):
-
+        self.ql.log.debug("Message header: remote port: 0x{:x} local port: 0x{:x}".format(msg.header.msgh_remote_port,msg.header.msgh_local_port))
         if msg.header.msgh_id == 200:
             # host info
             out_msg = self.ql.os.macho_host_server.host_info(msg.header, msg.content)
@@ -125,6 +125,13 @@ class MachPortManager():
         elif msg.header.msgh_id == 3409:
             out_msg = self.ql.os.macho_task_server.get_special_port(msg.header, msg.content)
             out_msg.write_msg_to_mem(addr)
+        elif msg.header.msgh_id == 3405:
+            out_msg = self.ql.os.macho_task_server.task_info(msg.header, msg.content)
+            out_msg.write_msg_to_mem(addr)
+
+        elif msg.header.msgh_id == 8000:#task_restartable_ranges_register
+            out_msg = self.ql.os.macho_task_server.restartable_ranges_register(msg.header, msg.content)
+            out_msg.write_msg_to_mem(addr)    
         else:
             self.ql.log.info("Error Mach Msgid {} can not handled".format(msg.header.msgh_id))
             raise Exception("Mach Msgid Not Found")

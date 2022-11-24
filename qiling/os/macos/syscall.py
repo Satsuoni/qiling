@@ -10,6 +10,7 @@ from qiling.const import *
 from qiling.arch.x86_const import *
 from qiling.os.posix.const_mapping import *
 from qiling.os.filestruct import *
+from qiling.os.freebsd.const import *
 
 from .const import *
 from .thread import *
@@ -119,6 +120,7 @@ def ql_syscall_kernelrpc_mach_port_mod_refs_trap(ql, target, name, right, delta,
     ql.log.debug("[mach] mach port mod refs trap(target: 0x%x, name: 0x%x, right: 0x%x, delta: 0x%x)" % (
         target, name, right, delta
     ))
+    return 0
     pass
 
 # 0x18
@@ -145,6 +147,12 @@ def ql_syscall_task_self_trap(ql, *args, **kw):
     ql.log.debug("[mach] task self trap, ret: %d" % (ql.os.macho_task.id))
     return ql.os.macho_task.id
 
+def ql_syscall_mach_timebase_info_trap(ql, ptr,*args, **kw):
+    ql.log.debug("[mach] mach_timebase info trap, ptr: %X ret: %d" % (ptr,1))
+    ql.mem.write(ptr,struct.pack("<L",1))
+    ql.mem.write(ptr+4,struct.pack("<L",1))
+    return 0
+
 # 0x1d
 def ql_syscall_host_self_trap(ql, *args, **kw):
     port_manager = ql.os.macho_port_manager
@@ -157,11 +165,18 @@ def ql_syscall_mach_msg_trap(ql, args, opt, ssize, rsize, rname, timeout):
         args, opt, ssize, rsize, rname, timeout))
     mach_msg = MachMsg(ql)
     mach_msg.read_msg_from_mem(args, ssize)
-    ql.log.debug("Recv-> Header: %s, Content: %s" % (mach_msg.header, mach_msg.content))
+    ql.log.debug("Recv-> Header: %s, ID: %d Content: %s" % (mach_msg.header,mach_msg.header.msgh_id, mach_msg.content))
     ql.os.macho_port_manager.deal_with_msg(mach_msg, args)
     return 0
 
-
+#170	AUE_CSOPS	ALL	{ int csops_audittoken(pid_t pid, uint32_t ops, user_addr_t useraddr, user_size_t usersize, user_addr_t uaudittoken); }
+def ql_syscall_csops_audittoken(ql, pid,ops,useraddr,usersize,audittoken):
+    dat=ql.mem.read(audittoken,32)
+    ql.log.debug("csops_audittoken: pid: 0x{:x} ops: {} useraddr: 0x{:x} usersize: {} audittoken: 0x{:x} data: {}".format(pid,ops,useraddr,usersize,audittoken,dat))
+    #ql.mem.write(useraddr,bytes(dat))
+    flag = struct.pack("<L", (CS_ENFORCEMENT | CS_GET_TASK_ALLOW))
+    ql.mem.write(useraddr, flag)
+    return 0
 #################
 # POSIX syscall #
 #################
@@ -178,7 +193,7 @@ def ql_syscall_access_macos(ql, path, flags, *args, **kw):
 # 0x30 
 def ql_syscall_sigprocmask(ql, how, mask, omask, *args, **kw):
     ql.log.debug("sigprocmask(how: 0x%x, mask: 0x%x, omask: 0x%x)" % (how, mask, omask))
-
+    return 0
 # 0x5c
 def ql_syscall_fcntl64_macos(ql, fcntl_fd, fcntl_cmd, fcntl_arg, *args, **kw):
     regreturn = 0
@@ -283,19 +298,41 @@ def sysctl_rdquad(ql,oldp, oldlenp, newp, val):
         return -1
     ln=struct.unpack("<Q",ql.mem.read(oldlenp,8))[0]
     if ln<8:
-        return 
+        return -1
     if newp!=0:
         return -1
     ql.mem.write(oldlenp,struct.pack("<Q",8))
     ql.mem.write(oldp,struct.pack("<Q",val))
     return 0
-    
+def sysctl_rdstr(ql,oldp, oldlenp, newp, strval):
+    if oldlenp==0:
+        return -1
+    ln=struct.unpack("<Q",ql.mem.read(oldlenp,8))[0]
+    if ln<len(strval):
+        return -1
+    #if newp!=0:
+    #    return -1
+    ql.mem.write(oldlenp,struct.pack("<Q",len(strval)))
+    try:
+      ql.mem.write(oldp,bytes(strval))
+    except TypeError:
+      ql.mem.write(oldp,bytes(strval,'utf8'))
+    return 0
 def ql_syscall_sysctl_kernel(ql, name, namelen, old, oldlenp, new_arg, newlen):
     if namelen==0: return 0
     nm=struct.unpack("<I",ql.mem.read(name,4))[0]
-    if nm==59:  #LP64 user stack query
+    if nm==KERN_USRSTACK64:  #LP64 user stack query
       ql.log.debug("LP64 user stack query")
       return sysctl_rdquad(ql,old,oldlenp,new_arg,0xff00ff00ff00)
+    elif nm==KERN_OSVERSION:
+      ql.log.debug("sysctl.OSVersion")
+      return sysctl_rdstr(ql,old,oldlenp,new_arg,'21G217')
+    elif nm==KERN_SAFEBOOT:
+      ql.log.debug("sysctl. safe boot. Our boot is safe, though MacOsX may not be")
+      return sysctl_rdquad(ql,old,oldlenp,new_arg,1)
+    ql.log.debug("sysctl_kernel unknown... {} ".format(nm))
+    return 0
+          
 # 0xca
 def ql_syscall_sysctl(ql, name, namelen, old, oldlenp, new_arg, newlen):
     ql.log.debug("sysctl(name: 0x%x, namelen: 0x%x, old: 0x%x, oldlenp: 0x%x, new: 0x%x, newlen: 0x%x)" % (
@@ -306,7 +343,7 @@ def ql_syscall_sysctl(ql, name, namelen, old, oldlenp, new_arg, newlen):
         ql.log.debug("Name {} {}".format(r,struct.unpack("<I",nm)[0]))
     if namelen>0:
         nm=struct.unpack("<I",ql.mem.read(name,4))[0]
-        if nm==1: #Kernel
+        if nm==CTL_KERN: #Kernel
             return ql_syscall_sysctl_kernel(ql,name+4,namelen-1, old, oldlenp, new_arg, newlen)
         else:
             ql.log.debug("Unimplemented sysctl") 
@@ -344,10 +381,29 @@ def ql_syscall_proc_info(ql, callnum, pid, flavor, arg, buff, buffer_size):
             info = ProcRegionWithPathInfo(ql)
             info.set_path(b"/usr/lib/dyld")
             info.write_info(buff)
+        elif flavor==PROC_PIDTBSDINFO:
+            info=ProcBSDInfo(ql)
+            info.write_to_addr(buff)
+        elif  flavor==PROC_PIDUNIQIDENTIFIERINFO:  #adds uuid to PROC_PIDTBSDINFO
+            info=ProcBSDInfo(ql)
+            info.write_to_addr(buff)
+        
+            #ql.mem.write(buffer_size,struct.pack("<Q",info.sizeof))
         pass
-    pass
+    return 0
+def ql_syscall_pthread_sigmask(ql,how,set,oldset):
+    return 0
 
+def ql_syscall_pthread_kill(ql,thread,signal):
+    return 0
 
+#int cond_sem, int mutex_sem, int timeout, int relative, __int64_t tv_sec, __int32_t tv_nsec
+def ql_syscall_semwait_signal_nocancel(ql,semaphore,mutex,timeout,relative,tvsec,tvnsec):
+    ql.log.debug("semwait_nocancel: Sema: {} mutex: 0x{:x} tout: {} rel: {} tvsec: {} tvnsec: {}".format(semaphore,mutex,timeout,relative,tvsec,tvnsec))
+    return 0
+#478	AUE_NULL	ALL	{ int bsdthread_ctl(user_addr_t cmd, user_addr_t arg1, user_addr_t arg2, user_addr_t arg3) NO_SYSCALL_STUB; }
+def ql_syscall_bsdthread_ctl(ql,cmd, arg1, arg2, arg3):
+    return 0
 # 0x16e
 def ql_syscall_bsdthread_register(ql, threadstart, wqthread, flags, stack_addr_hint, targetconc_ptr, dispatchqueue_offset):
     set_eflags_cf(ql, 0x0)
@@ -387,7 +443,7 @@ def ql_syscall_write_nocancel(ql, write_fd, write_buf, write_count, *args, **kw)
 
 def ql_syscall_read_nocancel(ql, fd,  buf,  nbytes):
     ql.log.debug("ql_syscall_read_nocancel fd: {} buf: 0x{:x} nbytes: {}".format(fd,  buf,  nbytes))
-    if not fd in  ql.os.fd:
+    if not hasattr(ql.os.fd[fd], "read"):
         ql.log.debug("read_nocancel: invalid fd: {}".format(fd))
         return -1
     dat=ql.os.fd[fd].read(nbytes)
@@ -417,9 +473,9 @@ def ql_syscall_shm_open(ql, filename, flags, mode, *args, **kw):
             regreturn = -1
 
     if regreturn >= 0 and regreturn != 2:
-        ql.log.debug("File Found: %s" % relative_path)
+        ql.log.debug("Shared File Found: %s" % relative_path)
     else:
-        ql.log.debug("File Not Found %s" % relative_path)
+        ql.log.debug("Shared File Not Found %s" % relative_path)
     return regreturn
 # 0x18e
 def ql_syscall_open_nocancel(ql, filename, flags, mode, *args, **kw):
@@ -525,6 +581,9 @@ def ql_syscall_shared_region_map_and_slide_2_np(ql, count,files_addr,mappings_co
         __global_shared_region=mapping_list[0].sms_address
     return 0#slide_size
 
+def ql_syscall_sigaction(ql, signum, act, oldact):
+    ql.log.debug("Sigaction: signum: {}  act: 0x{:x} oldact: 0x{:x}".format(signum,act,oldact))
+    return 0
 
 # 0x1e3
 def ql_syscall_csrctl(ql, op, useraddr, usersize, *args, **kw):
@@ -532,9 +591,16 @@ def ql_syscall_csrctl(ql, op, useraddr, usersize, *args, **kw):
     return 1
 
 # 0x1f4
+cure=0
 def ql_syscall_getentropy(ql, buffer, size, *args, **kw):
+    global cure
     ql.log.debug("getentropy(buffer: 0x%x, size: 0x%x)" % (buffer, size))
-    ql.mem.write(buffer,b"\xab"*size)
+    kk=[]
+    for a in range(size):
+      kk.append(cure)
+      cure=(cure+1)%256
+    ql.mem.write(buffer,bytes(kk))
+    #ql.mem.write(buffer,b"\xab"*size)
     return KERN_SUCCESS
 
 # 0x208
@@ -563,3 +629,41 @@ def ql_syscall_thread_fast_set_cthread_self64(ql, u_info_addr, *args, **kw):
     ql.log.debug("[mdep] thread fast set cthread self64(tsd_base:0x%x)" % (u_info_addr))
     ql.arch.msr.write(IA32_GS_BASE_MSR, u_info_addr)
     return KERN_SUCCESS
+
+def __get_timespec_struct(archbits):
+    long  = getattr(ctypes, f'c_int{archbits}')
+    ulong = getattr(ctypes, f'c_uint{archbits}')
+
+    class timespec(ctypes.Structure):
+        _pack_ = archbits // 8
+
+        _fields_ = (
+            ('tv_sec', ulong),
+            ('tv_nsec', long)
+        )
+
+    return timespec
+from datetime import datetime 
+from math import floor
+import ctypes
+
+def __get_timespec_obj(ql,archbits):
+    now = datetime.now().timestamp()
+    
+    tv_sec = floor(now)
+    tv_nsec = floor((now - floor(now)) * 1e6)
+    ql.log.debug("gettimeofday seconds: {} usec: {} ".format(tv_sec,tv_nsec))
+    ts_cls = __get_timespec_struct(archbits)
+
+    return ts_cls(tv_sec=tv_sec, tv_nsec=tv_nsec)
+
+def ql_syscall_gettimeofday(ql, tv, tz,machabstime):
+    ql.log.debug("gettimeofday tv: 0x{:x}, tz: 0x{:x}, abstime: 0x{:x}".format(tv,tz,machabstime))
+    if tv:
+        ts_obj = __get_timespec_obj(ql,ql.arch.bits)
+        ql.mem.write(tv, bytes(ts_obj))
+        ql.mem.write(machabstime,pack("<Q",1))
+    if tz:
+        ql.mem.write(tz, b'\x00' * 8)
+
+    return 0

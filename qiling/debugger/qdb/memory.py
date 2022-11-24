@@ -85,13 +85,16 @@ class MemoryManager(Context):
 
         return (f, s, c)
 
-    def fmt_unpack(self, bs: bytes, sz: int) -> int:
-        return {
+    def fmt_unpack(self, bs: bytes, sz: int, ft: str) -> int:
+        if ft!='s':
+          return {
                 1: lambda x: x[0],
                 2: self.unpack16,
                 4: self.unpack32,
                 8: self.unpack64,
                 }.get(sz)(bs)
+        else:
+           return bytes(bs)
 
     def handle_i(self, addr, ct=1):
         result = []
@@ -182,14 +185,21 @@ class MemoryManager(Context):
             for line in range(lines):
                 offset = line * sz * 4
                 print(f"0x{addr+offset:x}:\t", end="")
-
+                pdt=b''
                 idx = line * self.ql.arch.pointersize
                 for each in mem_read[idx:idx+self.ql.arch.pointersize]:
-                    data = self.fmt_unpack(each, sz)
                     prefix = "0x" if ft in ("x", "a") else ""
                     pad = '0' + str(sz*2) if ft in ('x', 'a', 't') else ''
                     ft = ft.lower() if ft in ("x", "o", "b", "d") else ft.lower().replace("t", "b").replace("a", "x")
-                    print(f"{prefix}{data:{pad}{ft}}\t", end="")
+                    #print(ft)
+                    data = self.fmt_unpack(each, sz,ft)
+                    if ft!='s':
+                        print(f"{prefix}{data:{pad}{ft}}\t", end="")
+                    else:
+                        #print(f"{prefix}{data}\t", end="")
+                        pdt+=data
+                if ft=='s':
+                    print(f"{pdt}", end="")
 
                 print()
 

@@ -37,7 +37,7 @@ def load_commpage(ql):
     ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_UNUSED, b'\x00')
     ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_VERSION, b'\x0d')
     ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_CPU_CAPABILITIES, b'\x00\x00\x00\x00')
-    ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_NCPUS, b'\x00')
+    ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_NCPUS, b'\x01')
     ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_UNUSED0, b'\x00')
     ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_CACHE_LINESIZE, b'\x00')
     ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_SCHED_GEN, b'\x00')
@@ -64,8 +64,12 @@ def load_commpage(ql):
     ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_APPROX_TIME, b'\x00')
     ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_APPROX_TIME_SUPPORTED, b'\x00')
     ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_CONT_TIMEBASE, b'\x00')
-    ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_BOOTTIME_USEC, b'\x00')
-
+    ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_BOOTTIME_USEC, b'\x01')
+    ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_PHYSICAL_CPUS, b'\x01')
+    ql.mem.write(COMM_PAGE_START_ADDRESS + COMM_PAGE_LOGICAL_CPUS, b'\x01')
+    
+#COMM_PAGE_PHYSICAL_CPUS             = 0x035   # uint8_t number of physical CPUs (hw.physicalcpu_max) */
+#COMM_PAGE_LOGICAL_CPUS              = 0x036   # uint8_t number of logical CPUs (hw.logicalcpu_max) */
 
 class QlLoaderMACHO(QlLoader):
     # macho x8664 loader 
@@ -116,7 +120,7 @@ class QlLoaderMACHO(QlLoader):
         self.ql.os.macho_task_server = MachTaskServer(self.ql)
         
         self.envs = env_dict_to_array(self.env)
-        self.apples = ["executable_path="+self.ql.os.path.transform_to_relative_path(self.ql.path),"ptr_munge=0x01"]
+        self.apples = ["executable_path="+self.ql.os.path.transform_to_relative_path(self.ql.path),"ptr_munge=0x01","malloc_entropy=0xabababababababab,0xabababababababab","stack_guard=0xbe,0xef,0xbe,0xef,0xb0,0x0f,0xb0,0x0f"]
         self.ql.os.heap = QlMemoryHeap(self.ql, self.heap_address, self.heap_address + self.heap_size)
 
         # FIXME: Not working due to overlarge mapping, need to fix it

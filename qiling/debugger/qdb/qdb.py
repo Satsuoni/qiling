@@ -318,9 +318,9 @@ class QlQdb(cmd.Cmd, QlDebugger):
         """
 
         try:
-            context_asm(self.ql, address)
-        except:
-            qdb_print(QDB_MSG.ERROR)
+            self.render.context_asm_dis( address)
+        except Exception as e:
+            qdb_print(QDB_MSG.ERROR,"{}".format(e))
 
     def do_examine(self, line: str) -> None:
 

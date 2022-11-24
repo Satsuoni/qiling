@@ -56,3 +56,35 @@ class ContextRenderX8664(ContextRender, ArchX8664):
             })
 
         self.render_assembly(lines)
+
+    def context_asm_dis(self,addr):
+        lines = {}
+        past_list = []
+
+        cur_addr = addr
+        while len(past_list) < 10:
+            line = self.disasm(cur_addr)
+            past_list.append(line)
+            cur_addr += line.size
+
+        fd_list = []
+        cur_insn = None
+        for each in past_list:
+            if each.address > addr:
+                fd_list.append(each)
+
+            elif each.address ==  addr:
+                cur_insn = each 
+
+        """
+        only forward and current instruction will be printed, 
+        because we don't have a solid method to disasm backward instructions,
+        since it's x86 instruction length is variadic 
+        """
+
+        lines.update({
+            "current": cur_insn,
+            "forward": fd_list,
+            })
+
+        self.render_assembly(lines)

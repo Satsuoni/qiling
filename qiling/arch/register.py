@@ -27,7 +27,7 @@ class QlRegisterManager:
         # getattr upon init. if it did, it would go into an endless recursion
         self.register_mapping: Mapping[str, int]
         super().__setattr__('register_mapping', regs_map)
-        print(regs_map)
+        #print(regs_map)
         self.uc = uc
         self.uc_pc = self.register_mapping[pc_reg]
         self.uc_sp = self.register_mapping[sp_reg]

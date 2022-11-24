@@ -111,7 +111,7 @@ class MachHostServer():
         
         return out_msg
 
-
+TASK_AUDIT_TOKEN      =          15
 class MachTaskServer():
 
     def __init__(self, ql):
@@ -139,6 +139,53 @@ class MachTaskServer():
 
         return out_msg
 
+    """typedef struct {
+		mach_msg_header_t Head;
+		NDR_record_t NDR;
+		task_flavor_t flavor;
+		mach_msg_type_number_t task_info_outCnt;
+		mach_msg_trailer_t trailer;
+	} Request __attribute__((unused));
+    typedef struct {
+		mach_msg_header_t Head;
+		NDR_record_t NDR;
+		kern_return_t RetCode;
+		mach_msg_type_number_t task_info_outCnt;
+		integer_t task_info_out[87];
+	} __Reply__task_info_t __attribute__((unused));
+    """
+    def task_info(self, in_header, in_content):
+        out_msg = MachMsg(self.ql)
+        self.ql.log.debug("in_content: {} len: {}".format(in_content,len(in_content)))
+        (ndr,flavor,task_info_outCnt)=unpack("<QII",in_content)
+        self.ql.log.debug("Remote task_info called: flavor: {} outcnt: {}".format(flavor,task_info_outCnt))
+        out_msg.header.msgh_id = in_header.msgh_id+100
+        outcnt = 87
+        if task_info_outCnt<outcnt:
+            outcnt= task_info_outCnt
+        out_msg.header.msgh_bits = 0
+        out_msg.header.msgh_remote_port =0
+        out_msg.header.msgh_voucher_port = 0
+        out_msg.header.msgh_local_port = self.ql.os.macho_mach_port.name
+        #OutP->RetCode = task_info(In0P->Head.msgh_request_port, In0P->flavor, OutP->task_info_out, &OutP->task_info_outCnt);
+	    #if (OutP->RetCode != KERN_SUCCESS) {
+		#MIG_RETURN_ERROR(OutP, OutP->RetCode);
+	    #}
+        #OutP->NDR = NDR_record;
+        out_msg.content = pack("<Q", ndr)
+        out_msg.content += pack("<L", 0x0) #retcode
+        out_msg.content += pack("<I", outcnt) 
+        if flavor==TASK_AUDIT_TOKEN:
+            for a in range(outcnt):
+                out_msg.content +=pack("<I", 0x512) 
+        else:
+            raise Exception("taskinfo flavor {} unimplemented".format(flavor))
+
+        out_msg.header.msgh_size = (388-348)+4*outcnt
+        self.ql.log.debug("Remote task_info return id: {} size: {}".format(out_msg.header.msgh_id,out_msg.header.msgh_size))
+        return out_msg
+	    #OutP->Head.msgh_size = (mach_msg_size_t)(sizeof(Reply) - 348) + (((4 * OutP->task_info_outCnt)));
+
     def get_special_port(self, in_header, in_content):
         out_msg = MachMsg(self.ql)
         out_msg.header.msgh_bits = 0x80001200
@@ -158,5 +205,26 @@ class MachTaskServer():
         out_msg.trailer += pack("<B", 0x0)                                                  # type
         out_msg.trailer += pack("<L", 0x0)                                                  # pad end
 
+        return out_msg
+        pass
+    """
+    typedef struct {
+		mach_msg_header_t Head;
+		NDR_record_t NDR;
+		kern_return_t RetCode;
+	} __Reply__task_restartable_ranges_register_t __attribute__((unused));
+
+    """
+    def restartable_ranges_register(self, in_header, in_content): #just return success
+        out_msg = MachMsg(self.ql)
+        out_msg.header.msgh_bits = 4608
+        out_msg.header.msgh_size = 24+12
+        out_msg.header.msgh_remote_port = 0x00000000
+        out_msg.header.msgh_local_port = self.ql.os.macho_mach_port.name
+        out_msg.header.msgh_voucher_port = 0
+        out_msg.header.msgh_id = 8100
+        out_msg.content += pack("<Q", 0x100000000)      # NDR
+        out_msg.content += pack("<L", 0x0)              # ret code / KERN SUCCESS
+            
         return out_msg
         pass

@@ -238,3 +238,41 @@ class ContextRender(Context, Render):
             })
 
         self.render_assembly(lines)
+    def context_asm_dis(self,addr) -> None:
+        """
+        read context assembly and render with render_assembly
+        """
+
+        lines = {}
+        past_list = []
+        from_addr = addr -0x10
+        to_addr = addr +0x10
+
+        cur_addr = from_addr
+        while cur_addr != to_addr:
+            insn = self.disasm(cur_addr)
+            cur_addr += self.arch_insn_size
+            if not insn:
+                continue
+            past_list.append(insn)
+
+        bk_list = []
+        fd_list = []
+        cur_insn = None
+        for each in past_list:
+            if each.address < addr:
+                bk_list.append(each)
+
+            elif each.address > addr:
+                fd_list.append(each)
+
+            elif each.address == addr:
+                cur_insn = each 
+
+        lines.update({
+            "backward": bk_list,
+            "forward": fd_list,
+            "current": cur_insn,
+            })
+
+        self.render_assembly(lines)

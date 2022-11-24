@@ -404,6 +404,7 @@ arm64_syscall_table = {
     493: 'grab_pgo_data',
     499: 'work_interval_ctl',
     536: 'shared_region_map_and_slide_2_np',
+
 }
 
 x8664_syscall_table = {
@@ -519,6 +520,7 @@ x8664_syscall_table = {
     165: 'quotactl',
     167: 'mount',
     169: 'csops',
+    170: 'csops_audittoken',
     173: 'waitid',
     176: 'add_profil',
     181: 'setgid',
@@ -748,6 +750,7 @@ x8664_syscall_table = {
     427: 'fsgetpath',
     428: 'audit_session_self',
     429: 'audit_session_join',
+    478: 'bsdthread_ctl',
     483: 'csrctl',
     500: 'getentropy',
     520: 'terminate_with_payload',
@@ -764,5 +767,6 @@ x8664_syscall_table = {
     0x100001c: 'task_self_trap',
     0x100001d: 'host_self_trap',
     0x100001f: 'mach_msg_trap',
+    0x1000059: 'mach_timebase_info_trap',
     0x3000003: 'thread_fast_set_cthread_self64',
 }

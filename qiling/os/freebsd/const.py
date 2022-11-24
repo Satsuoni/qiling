@@ -111,7 +111,9 @@ KERN_PROC_OSREL       = 40    # osreldate for process binary
 KERN_PROC_SIGTRAMP    = 41    # signal trampoline location
 KERN_PROC_CWD         = 42    # process current working directory
 KERN_PROC_NFDS        = 43    # number of open file descriptors
-
+KERN_USRSTACK64 = 59
+KERN_OSVERSION     =    65   #   /* for build number i.e. 9A127 */ 21G217 for moi 12.6.1
+KERN_SAFEBOOT      =    66    #  /* are we booted safe? */
 #
 # KERN_IPC identifiers
 #

@@ -27,8 +27,12 @@ def map_commpage(ql):
         addr_size = 0x1000        
     ql.mem.map(addr_base, addr_size, info="[commpage]")
     time_lock_slide = 0x68
+    _COMM_PAGE_PHYSICAL_CPUS=addr_base+0x035
+    _COMM_PAGE_LOGICAL_CPUS=addr_base+0x036
     ql.mem.write(addr_base+time_lock_slide, ql.pack32(0x1))
-
+    ql.mem.write(_COMM_PAGE_PHYSICAL_CPUS,b'\x01')
+    ql.mem.write(_COMM_PAGE_LOGICAL_CPUS,b'\x01')
+    
 
 # reference to osfmk/mach/shared_memory_server.h
 class SharedFileMappingNp:
@@ -459,6 +463,69 @@ class ProcRegionWithPathInfo():
         addr += 248
         self.ql.mem.write(addr, self.vnode_info_path_vip_path)
 
+"""
+sizeof 136
+struct proc_bsdinfo {
+	uint32_t                pbi_flags;              /* 64bit; emulated etc */
+	uint32_t                pbi_status;
+	uint32_t                pbi_xstatus;
+	uint32_t                pbi_pid;
+	uint32_t                pbi_ppid;
+	uid_t                   pbi_uid;
+	gid_t                   pbi_gid;
+	uid_t                   pbi_ruid;
+	gid_t                   pbi_rgid;
+	uid_t                   pbi_svuid;
+	gid_t                   pbi_svgid;
+	uint32_t                rfu_1;                  /* reserved */
+	char                    pbi_comm[MAXCOMLEN];
+	char                    pbi_name[2 * MAXCOMLEN];  /* empty if no name is registered */
+	uint32_t                pbi_nfiles;
+	uint32_t                pbi_pgid;
+	uint32_t                pbi_pjobc;
+	uint32_t                e_tdev;                 /* controlling tty dev */
+	uint32_t                e_tpgid;                /* tty process group id */
+	int32_t                 pbi_nice;
+	uint64_t                pbi_start_tvsec;
+	uint64_t                pbi_start_tvusec;
+};
+"""
+PROC_FLAG_SYSTEM    =    1       
+PROC_FLAG_TRACED    =    2       
+PROC_FLAG_INEXIT    =    4       
+PROC_FLAG_PPWAIT     =   8
+PROC_FLAG_LP64    =      0x10    
+PROC_FLAG_SLEADER   =    0x20   
+PROC_FLAG_CTTY     =     0x40   
+PROC_FLAG_CONTROLT  =    0x80   
+PROC_FLAG_THCWD     =    0x100   
+SIDL   = 1  #              /* Process being created by fork. */
+SRUN   = 2        #       /* Currently runnable. */
+SSLEEP = 3       #        /* Sleeping on an address. */
+SSTOP  = 4       #        /* Process debugging or suspension. */
+SZOMB =  5      #         /* Awaiting collection by parent. */
+
+class ProcBSDInfo():
+    def __init__(self, ql):
+        self.ql = ql
+        self.pbi_flags=PROC_FLAG_LP64
+        self.pbi_status=SRUN
+        self.pbi_pid=0x512
+        self.sizeof=136
+        pass
+    def write_to_addr(self,addr):
+        offs=addr
+        self.ql.mem.write(offs,pack("<I",self.pbi_flags))
+        offs+=4
+        self.ql.mem.write(offs,pack("<I",self.pbi_status))
+        offs+=4
+        self.ql.mem.write(offs,pack("<I",0))
+        offs+=4
+        self.ql.mem.write(offs,pack("<I",self.pbi_pid))
+        offs+=4
+        
+        
+#getpid
 
 # virtual FS
 # Only have some basic func now 
