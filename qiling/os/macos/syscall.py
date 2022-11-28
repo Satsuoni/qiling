@@ -195,8 +195,13 @@ def ql_syscall_sigprocmask(ql, how, mask, omask, *args, **kw):
     ql.log.debug("sigprocmask(how: 0x%x, mask: 0x%x, omask: 0x%x)" % (how, mask, omask))
     return 0
 # 0x5c
+from qiling.os.posix.syscall.fcntl import ql_syscall_fcntl as fcntls
 def ql_syscall_fcntl64_macos(ql, fcntl_fd, fcntl_cmd, fcntl_arg, *args, **kw):
     regreturn = 0
+    ret=fcntls(ql, fcntl_fd, fcntl_cmd, fcntl_arg)
+    if ret==0:
+        ql.log.debug("fcntl64_mac(fd: %d, cmd: %d, arg: 0x%x) = %d" % (fcntl_fd, fcntl_cmd, fcntl_arg, regreturn))
+        return 0
     if fcntl_cmd == F_GETFL:
         regreturn = 2
     elif fcntl_cmd == F_SETFL:
@@ -208,10 +213,13 @@ def ql_syscall_fcntl64_macos(ql, fcntl_fd, fcntl_cmd, fcntl_arg, *args, **kw):
     elif fcntl_cmd == F_ADDFILESIGS_RETURN:
         ql.mem.write(fcntl_arg, ql.pack32(0xefffffff))
         regreturn = 0
+    elif fcntl_cmd == F_GETPATH:
+        regreturn = 0
     else:
         regreturn = 0
+        raise Exception("unknown fcntl {}".format(fcntl_cmd))
 
-    ql.log.debug("fcntl64(fd: %d, cmd: %d, arg: 0x%x) = %d" % (fcntl_fd, fcntl_cmd, fcntl_arg, regreturn))
+    ql.log.debug("fcntl64_mac(fd: %d, cmd: %d, arg: 0x%x) = %d" % (fcntl_fd, fcntl_cmd, fcntl_arg, regreturn))
     return regreturn
 
 # 0x99
@@ -318,6 +326,32 @@ def sysctl_rdstr(ql,oldp, oldlenp, newp, strval):
     except TypeError:
       ql.mem.write(oldp,bytes(strval,'utf8'))
     return 0
+
+from qiling.os.macos.structs import *    
+def ql_syscall_sysctl_kernel_proc(ql, name, namelen, old, oldlenp, new_arg, newlen):
+    if namelen==0: return 0
+    nm=struct.unpack("<I",ql.mem.read(name,4))[0]
+    if nm==KERN_PROC_PID:
+        pid=struct.unpack("<I",ql.mem.read(name+4,4))[0]
+        ql.log.debug("Sysctl by PID: 0x{:x}".format(pid))
+    #put proc and eproc structsg
+    cur_eproc_addr = old+ctypes.sizeof(miniproc_t)
+    cur_proc = miniproc_t(ql, old)
+    cur_proc.p_pid = 0x512
+    cur_proc.p_ppid = 1
+    cur_proc.p_pgrpid = 0x512
+    cur_proc.p_flag = 0x00000004 # 64 bit proccess
+    cur_proc.p_uid = 0
+    cur_proc.p_gid = 0
+    cur_proc.p_ruid = 0
+    cur_proc.p_rgid = 0
+    cur_proc.p_svuid = 0
+    cur_proc.p_svgid = 0    
+    cur_proc.updateToMem()
+    ln=struct.unpack("<Q",ql.mem.read(oldlenp,8))[0]
+    ql.mem.write(cur_eproc_addr,pack("<Q",old))
+    ql.log.debug("Sysctl proc: 0x{:x}  eproc:0x{:x} oldlen:{} szof:{}".format(old,cur_eproc_addr,ln,ctypes.sizeof(proc_t)))
+    return 0
 def ql_syscall_sysctl_kernel(ql, name, namelen, old, oldlenp, new_arg, newlen):
     if namelen==0: return 0
     nm=struct.unpack("<I",ql.mem.read(name,4))[0]
@@ -330,9 +364,18 @@ def ql_syscall_sysctl_kernel(ql, name, namelen, old, oldlenp, new_arg, newlen):
     elif nm==KERN_SAFEBOOT:
       ql.log.debug("sysctl. safe boot. Our boot is safe, though MacOsX may not be")
       return sysctl_rdquad(ql,old,oldlenp,new_arg,1)
+    elif nm==KERN_PROC:
+      return ql_syscall_sysctl_kernel_proc(ql,name+4,namelen-1, old, oldlenp, new_arg, newlen)
     ql.log.debug("sysctl_kernel unknown... {} ".format(nm))
     return 0
-          
+def ql_syscall_sysctl_hw(ql, name, namelen, old, oldlenp, new_arg, newlen):
+    if namelen==0: return 0
+    nm=struct.unpack("<I",ql.mem.read(name,4))[0]
+    if nm==HW_PAGESIZE:  #pagesize
+      ql.log.debug("pagesizequery")
+      return sysctl_rdquad(ql,old,oldlenp,new_arg,PAGE_SIZE)
+    ql.log.debug("sysctl_hw unknown... {} ".format(nm)) 
+    return 0
 # 0xca
 def ql_syscall_sysctl(ql, name, namelen, old, oldlenp, new_arg, newlen):
     ql.log.debug("sysctl(name: 0x%x, namelen: 0x%x, old: 0x%x, oldlenp: 0x%x, new: 0x%x, newlen: 0x%x)" % (
@@ -345,6 +388,8 @@ def ql_syscall_sysctl(ql, name, namelen, old, oldlenp, new_arg, newlen):
         nm=struct.unpack("<I",ql.mem.read(name,4))[0]
         if nm==CTL_KERN: #Kernel
             return ql_syscall_sysctl_kernel(ql,name+4,namelen-1, old, oldlenp, new_arg, newlen)
+        elif nm==CTL_HW: 
+            return ql_syscall_sysctl_hw(ql,name+4,namelen-1, old, oldlenp, new_arg, newlen)
         else:
             ql.log.debug("Unimplemented sysctl") 
 
@@ -414,7 +459,29 @@ def ql_syscall_thread_selfid(ql, *args, **kw):
     thread_id = ql.os.macho_thread.id
     return thread_id
 
+def ql_syscall_sem_getvalue(ql, sem, x ):
+    return -78 #unimplemented
 
+
+def ql_syscall_fstatfs64(ql, fd, buf):
+    data = b"0" * (12 * 8)  # for now, just return 0s
+    regreturn = 0
+
+    try:
+        ql.mem.write(buf, data)
+    except:
+        regreturn = -1
+
+    if data:
+        ql.log.debug("fstatfs() CONTENT:")
+        ql.log.debug(str(data))
+
+    return regreturn
+#host_create_mach_voucher_trap( mach_port_name_t host, mach_voucher_attr_raw_recipe_array_t (8b,addr) recipes,int recipes_size,mach_port_name_t *voucher);
+def ql_syscall_host_create_mach_voucher_trap(ql,host,recipes, recipes_size,voucher):
+    ql.mem.write(voucher,pack("<L",12))
+    ql.log.debug("Mak voucher: host: 0x{:x} recipes: 0x{:x} {} size: {} cvoucher: 0x{:x}".format(host,recipes,ql.mem.read(recipes,recipes_size*4),recipes_size,voucher))
+    return 0
 # 0x18d
 def ql_syscall_write_nocancel(ql, write_fd, write_buf, write_count, *args, **kw):
     regreturn = 0
@@ -504,6 +571,11 @@ def ql_syscall_open_nocancel(ql, filename, flags, mode, *args, **kw):
     else:
         ql.log.debug("File Not Found %s" % relative_path)
     return regreturn
+def ql_syscall_thread_get_special_reply_port(ql):
+    port_manager = ql.os.macho_port_manager
+    #thread_port = port_manager.get_thread_port(ql.os.macho_thread)
+    ql.log.debug("[mach] thread_get_special_reply_port: ret: %s" % (ql.os.macho_mach_port.name))
+    return ql.os.macho_mach_port.name
 
 # 0x1b6
 def ql_syscall_shared_region_map_and_slide_np(ql, fd, count, mappings_addr, slide, slide_start, slide_size):

@@ -1215,6 +1215,54 @@ class proc_t(ctypes.Structure):
         newObj.ql = self.ql
         newObj.base = self.base
         return newObj
+class miniproc_t(ctypes.Structure):
+    # struct lck_spin_t {
+    #     unsigned long    opaque[10];
+    # };
+    class lck_spin_t(ctypes.Structure):
+        _fields_ = (
+            ("opaque", ctypes.c_ulong * 10),
+        )
+    _fields_ = (
+        ("p_list", list_entry),
+        ("p_pid", ctypes.c_int32),
+        ("task", POINTER64),
+        ("p_pptr", POINTER64),
+        ("p_ppid", ctypes.c_int32),
+        ("p_pgrpid", ctypes.c_int32),
+        ("p_uid", ctypes.c_uint32),
+        ("p_gid", ctypes.c_uint32),
+        ("p_ruid", ctypes.c_uint32),
+        ("p_rgid", ctypes.c_uint32),
+        ("p_svuid", ctypes.c_uint32),
+        ("p_svgid", ctypes.c_uint32),
+        ("p_uniqueid", ctypes.c_uint64),
+        ("p_puniqueid", ctypes.c_uint64),
+        ("p_mlock", lck_mtx_t),
+        ("p_stat", ctypes.c_char),
+        ("p_shutdownstate", ctypes.c_char),
+        ("p_kdebug", ctypes.c_char),
+        ("p_btrace", ctypes.c_char),
+        ("p_pglist", list_entry),
+        ("p_sibling", list_entry),
+        ("p_children", list_head),
+        ("p_uthlist", tailq_head),
+        ("p_hash", list_entry),
+    )
+
+    def __init__(self, ql, base):
+        self.ql = ql
+        self.base = base
+
+    def updateToMem(self):
+        self.ql.mem.write(self.base, bytes(self))
+
+    def loadFromMem(self):
+        data = self.ql.mem.read(self.base, ctypes.sizeof(self))
+        newObj = type(self).from_buffer(data)
+        newObj.ql = self.ql
+        newObj.base = self.base
+        return newObj
 
 # _STRUCT_TIMESPEC
 # {

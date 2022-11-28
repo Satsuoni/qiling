@@ -15,7 +15,7 @@ from struct import pack, unpack
 from qiling.const import *
 from .mach_port import *
 from .const import *
-
+MACH_MSGH_BITS_COMPLEX = 0x80000000
 class MachHostServer():
 
     def __init__(self, ql):
@@ -87,6 +87,32 @@ class MachHostServer():
         else:
             self.ql.log.debug("Host flavor not support")
             raise
+        return out_msg
+    """
+    	typedef struct {
+		mach_msg_header_t Head;
+		/* start of the kernel processed data */
+		mach_msg_body_t msgh_body; #mach_msg_body_t:4ul
+		mach_msg_port_descriptor_t port; 12 ul
+		/* end of the kernel processed data */
+	} __Reply__host_get_special_port_t __attribute__((unused));
+    """
+    def host_get_special_port(self,in_header, in_content):
+        out_msg = MachMsg(self.ql)
+        out_msg.header.msgh_bits = 0x80001200
+        out_msg.header.msgh_remote_port =0
+        out_msg.header.msgh_voucher_port = 0
+        out_msg.header.msgh_local_port = self.ql.os.macho_mach_port.name
+        out_msg.header.msgh_size=40
+        out_msg.header.msgh_id = in_header.msgh_id+100
+        out_msg.content = pack("<L", 0x1)
+        out_msg.trailer = b''
+        out_msg.trailer += pack("<L",self.ql.os.macho_port_manager.host_port.name)       # host port name 
+        out_msg.trailer += pack("<L", 0x0)                                             # pad1
+        out_msg.trailer += pack("<H", 0x0)                                              # pad2
+        out_msg.trailer += pack("<B", 19)                                             # disposition
+        out_msg.trailer += pack("<B", 0x0)                                              # type
+        out_msg.trailer += pack("<L", 0x0)                                              # pad end
         return out_msg
 
     def host_get_clock_service(self, in_header, in_content):
@@ -185,6 +211,57 @@ class MachTaskServer():
         self.ql.log.debug("Remote task_info return id: {} size: {}".format(out_msg.header.msgh_id,out_msg.header.msgh_size))
         return out_msg
 	    #OutP->Head.msgh_size = (mach_msg_size_t)(sizeof(Reply) - 348) + (((4 * OutP->task_info_outCnt)));
+    """
+    typedef struct {
+		mach_msg_header_t Head;
+		NDR_record_t NDR; - 8 bytes
+		exception_mask_t exception_mask;
+	} __Request__task_get_exception_ports_t __attribute__((unused));
+    typedef struct {
+		mach_msg_header_t Head; ->size:24 byte
+		/* start of the kernel processed data */
+		mach_msg_body_t msgh_body; msgh_descriptor_count
+		mach_msg_port_descriptor_t old_handlers[32]; ->12 byte*32
+		/* end of the kernel processed data */
+		NDR_record_t NDR;
+		mach_msg_type_number_t masksCnt;
+		exception_mask_t masks[32];
+		exception_behavior_t old_behaviors[32];
+		thread_state_flavor_t old_flavors[32];
+	} __Reply__task_get_exception_ports_t __attribute__((unused));
+    """
+    def task_get_exception_ports(self,in_header, in_content):
+        out_msg = MachMsg(self.ql)
+        out_msg.header.msgh_id = in_header.msgh_id+100
+        out_msg.header.msgh_bits = 0x80001200
+        out_msg.header.msgh_remote_port = 0x00000000
+        out_msg.header.msgh_local_port = self.ql.os.macho_mach_port.name
+        out_msg.header.msgh_voucher_port = 0
+        out_msg.content = pack("<L", 32)
+        emask=unpack("<L",in_content[8:12])[0]
+        self.ql.log.debug("Getting exc ports with mask {:X} ic: {}".format(emask,in_content))
+        for i in range(32):
+            out_msg.content+=pack("<L", 0) #port name
+            out_msg.content+= pack("<L", 0x0)                                                  # pad1
+            out_msg.content+= pack("<H", 0x0)                                                  # pad2
+            out_msg.content+= pack("<B", 0x11)                                                 # disposition
+            out_msg.content+= pack("<B", 0x0)                                                  # type
+            # out_msg.content+= pack("<L", 0x0)     #pad end
+           
+        out_msg.trailer =bytes(in_content[:8])
+        csize=(808-384)
+        masksCnt=1
+        out_msg.trailer+=pack("<L", masksCnt)
+        msgh_size_delta=masksCnt*4
+        out_msg.trailer+=pack("<L", emask)
+        csize+=msgh_size_delta
+        out_msg.trailer+=pack("<L", 0) #behaviors
+        out_msg.trailer+=pack("<L", 0) #flavors
+        csize+=msgh_size_delta*2
+        out_msg.header.msgh_size = csize
+        self.ql.log.debug("Message size: {}".format(out_msg.header.msgh_size))
+        return out_msg
+
 
     def get_special_port(self, in_header, in_content):
         out_msg = MachMsg(self.ql)

@@ -117,7 +117,8 @@ def ql_syscall_openat(ql: Qiling, fd: int, path: int, flags: int, mode: int):
 
     return regreturn
 
-
+def ql_syscall_openat_nocancel(ql: Qiling, fd: int, path: int, flags: int, mode: int):
+    return ql_syscall_openat(ql,fd,path,flags,mode)
 def ql_syscall_fcntl(ql: Qiling, fd: int, cmd: int, arg: int):
     if fd not in range(NR_OPEN):
         return -EBADF
@@ -152,7 +153,17 @@ def ql_syscall_fcntl(ql: Qiling, fd: int, cmd: int, arg: int):
     elif cmd == F_SETFL:
         f.fcntl(cmd, arg)
         regreturn = 0
-
+    elif cmd == F_GETPATH:
+        #ql.log.debug(dir(f))
+        ql.log.debug(f.q_path)
+        rpath = getattr(f, "q_path", "")
+        ql.log.debug("FCNTL got path {} at fd {}".format(rpath,fd))
+        rb=bytes(rpath,"utf8")
+        ql.mem.write(arg,bytes([0]*(len(rb)+1)))
+        ql.mem.write(arg,rb)
+        regreturn = 0
+    elif cmd== F_CHECK_LV:
+        regreturn = 0
     else:
         regreturn = -1
 

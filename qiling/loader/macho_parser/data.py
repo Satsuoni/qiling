@@ -22,7 +22,7 @@ class Segment:
         self.sections_index = []
         for i in range(self.section_num):
             self.sections.append(Section(lc.sections[i], data))
-
+        #print("Segment {} loaded {} sections".format(lc.segment_name,self.section_num))
     # def __str__(self):
     #     return (" Segment {}: content {}".format(self.name, self.content))
 
@@ -40,7 +40,11 @@ class Section:
         self.rel_num = lc.number_of_relocations
         self.flags = lc.flags
         self.content = data[self.offset : self.offset + self.size]
-
+        #print("Section {} loaded".format(lc.section_name))
+        #sf="{}".format(lc.section_name).strip()
+        #if("__stubs" in sf):
+        #  print(self.content)
+        #  print(self.address)
     # def __str__(self):
     #     return (" Section {}: content {}".format(self.name,self.content))
 

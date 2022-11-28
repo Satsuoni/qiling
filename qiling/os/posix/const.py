@@ -596,7 +596,8 @@ F_SETFL		= 4
 F_GETLK		= 5
 F_SETLK		= 6
 F_SETLKW	= 7
-
+F_GETPATH    =   50 
+F_CHECK_LV       =       98  
 FD_CLOEXEC = 1
 
 AT_FDCWD = -100

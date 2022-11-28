@@ -404,7 +404,8 @@ arm64_syscall_table = {
     493: 'grab_pgo_data',
     499: 'work_interval_ctl',
     536: 'shared_region_map_and_slide_2_np',
-
+ 0x1000032: 'thread_get_special_reply_port',
+ 0x1000046: 'host_create_mach_voucher_trap',
 }
 
 x8664_syscall_table = {
@@ -750,6 +751,10 @@ x8664_syscall_table = {
     427: 'fsgetpath',
     428: 'audit_session_self',
     429: 'audit_session_join',
+    #463	AUE_OPENAT_RWTC	ALL	{ int openat(int fd, user_addr_t path, int flags, int mode) NO_SYSCALL_STUB; }
+#464	AUE_OPENAT_RWTC	ALL	{ int openat_nocancel(int fd, user_addr_t path, int flags, int mode) NO_SYSCALL_STUB; }
+    463: 'openat',
+    464: 'openat_nocancel',
     478: 'bsdthread_ctl',
     483: 'csrctl',
     500: 'getentropy',
@@ -767,6 +772,8 @@ x8664_syscall_table = {
     0x100001c: 'task_self_trap',
     0x100001d: 'host_self_trap',
     0x100001f: 'mach_msg_trap',
+    0x1000032: 'thread_get_special_reply_port', #syscall_sw
+    0x1000046: 'host_create_mach_voucher_trap',
     0x1000059: 'mach_timebase_info_trap',
     0x3000003: 'thread_fast_set_cthread_self64',
 }
