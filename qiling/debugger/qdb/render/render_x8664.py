@@ -32,8 +32,11 @@ class ContextRenderX8664(ContextRender, ArchX8664):
         cur_addr = self.cur_addr
         while len(past_list) < 10:
             line = self.disasm(cur_addr)
-            past_list.append(line)
-            cur_addr += line.size
+            if line is not None:
+              past_list.append(line)
+              cur_addr += line.size
+            else:
+                break
 
         fd_list = []
         cur_insn = None

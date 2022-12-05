@@ -138,11 +138,53 @@ class MachHostServer():
         return out_msg
 
 TASK_AUDIT_TOKEN      =          15
+TASK_EXTMOD_INFO   =19
+ARM_DEBUG_STATE32    =    14
+ARM_DEBUG_STATE64    =   15
+"""
+x86_debug_state64_t - 64 bytes
+struct vm_extmod_statistics {
+	int64_t task_for_pid_count;                     /* # of times task port was looked up */
+	int64_t task_for_pid_caller_count;      /* # of times this task called task_for_pid */
+	int64_t thread_creation_count;          /* # of threads created in task */
+	int64_t thread_creation_caller_count;   /* # of threads created by task */
+	int64_t thread_set_state_count;         /* # of register state sets in task */
+	int64_t thread_set_state_caller_count;  /* # of register state sets by task */
+} __attribute__((aligned(8)));
+struct task_extmod_info {
+	unsigned char   task_uuid[16];
+	vm_extmod_statistics_data_t             extmod_statistics;
+}; - 64 bytes
+_STRUCT_X86_DEBUG_STATE32
+{
+	unsigned int	__dr0;
+	unsigned int	__dr1;
+	unsigned int	__dr2;
+	unsigned int	__dr3;
+	unsigned int	__dr4;
+	unsigned int	__dr5;
+	unsigned int	__dr6;
+	unsigned int	__dr7;
+};
+_STRUCT_X86_DEBUG_STATE64
+{
+	__uint64_t	__dr0;
+	__uint64_t	__dr1;
+	__uint64_t	__dr2;
+	__uint64_t	__dr3;
+	__uint64_t	__dr4;
+	__uint64_t	__dr5;
+	__uint64_t	__dr6;
+	__uint64_t	__dr7;
+};
+"""
+x86_DEBUG_STATE32        =       10
+x86_DEBUG_STATE64        =       11
 class MachTaskServer():
 
     def __init__(self, ql):
         self.ql = ql
-
+        
     def semaphore_create(self, in_header, in_content):
         out_msg = MachMsg(self.ql)
 
@@ -162,9 +204,64 @@ class MachTaskServer():
         out_msg.trailer += pack("<B", 0x11)                                                 # disposition
         out_msg.trailer += pack("<B", 0x0)                                                  # type
         out_msg.trailer += pack("<L", 0x0)                                                  # pad end
-
+         
         return out_msg
-
+    """
+    	typedef struct {
+		mach_msg_header_t Head; 24
+		NDR_record_t NDR; 8 
+		thread_state_flavor_t flavor; 4
+		mach_msg_type_number_t old_stateCnt; 4
+		mach_msg_trailer_t trailer; 8
+	} Request __attribute__((unused)); -> 40 bytes
+    typedef struct {
+		mach_msg_header_t Head;
+		NDR_record_t NDR;
+		kern_return_t RetCode;
+		mach_msg_type_number_t old_stateCnt;
+		natural_t old_state[1296];
+	} __Reply__thread_get_state_t __attribute__((unused));
+ 5224 bytes natural_t=4
+ #define x86_DEBUG_STATE32               10
+#define x86_DEBUG_STATE64               11
+    """
+    def thread_get_state(self,in_header, in_content):
+        out_msg = MachMsg(self.ql)
+        if len(in_content)==24: 
+          (ndr,flavor,oldcnt,trailer)=unpack("<QIIQ",in_content)
+        else:
+          (ndr,flavor,oldcnt)=unpack("<QII",in_content)
+        self.ql.log.debug("thread_get_state msg flavor: {} cnt: {}".format(flavor,oldcnt))
+        if self.ql.arch.type==QL_ARCH.X8664:
+            if flavor==x86_DEBUG_STATE32:
+                self.ql.log.debug("x86_DEBUG_STATE32")
+            elif flavor==x86_DEBUG_STATE64:
+                self.ql.log.debug("x86_DEBUG_STATE64")
+            else :
+                self.ql.log.info("unimplemented thread_get_state flavor x86 {}".format(flavor))
+        elif self.ql.arch.type==QL_ARCH.ARM64:
+            if flavor==ARM_DEBUG_STATE32:
+                self.ql.log.debug("ARM_DEBUG_STATE32")
+            elif flavor==ARM_DEBUG_STATE64:
+                self.ql.log.debug("ARM_DEBUG_STATE64")
+            else :
+                self.ql.log.info("unimplemented thread_get_state flavor arm {}".format(flavor))
+        else:
+            self.ql.log.info("unimplemented arch for  thread_get_state {}".format(self.ql.arch.type))
+        # for now, fill oldcnt with 0s...
+        out_msg.header.msgh_bits = 0
+        out_msg.header.msgh_remote_port =0
+        out_msg.header.msgh_voucher_port = 0
+        out_msg.header.msgh_local_port = self.ql.os.macho_mach_port.name
+        out_msg.header.msgh_id = in_header.msgh_id+100
+        out_msg.content = pack("<Q", ndr)
+        out_msg.content += pack("<L", 0x0) #retcode
+        out_msg.content += pack("<L", oldcnt)
+        for a in range(oldcnt):
+            out_msg.content += pack("<L", 0)
+        out_msg.header.msgh_size = (5224-5184)+4*oldcnt
+        return out_msg
+         
     """typedef struct {
 		mach_msg_header_t Head;
 		NDR_record_t NDR;
@@ -204,6 +301,11 @@ class MachTaskServer():
         if flavor==TASK_AUDIT_TOKEN:
             for a in range(outcnt):
                 out_msg.content +=pack("<I", 0x512) 
+        elif flavor==TASK_EXTMOD_INFO:
+            for a in range(4):
+                out_msg.content +=pack("<I", 0x512) 
+            for a in range(6):
+                out_msg.content +=pack("<Q", 0)             
         else:
             raise Exception("taskinfo flavor {} unimplemented".format(flavor))
 
@@ -262,6 +364,37 @@ class MachTaskServer():
         self.ql.log.debug("Message size: {}".format(out_msg.header.msgh_size))
         return out_msg
 
+    """
+        typedef struct {
+            mach_msg_header_t Head;
+            /* start of the kernel processed data */
+            mach_msg_body_t msgh_body;
+            mach_msg_port_descriptor_t special_port;
+            /* end of the kernel processed data */
+            NDR_record_t NDR;
+            int which_port;
+            mach_msg_trailer_t trailer;
+        } Request __attribute__((unused)); -> 52 bytes
+        typedef struct {
+            mach_msg_header_t Head;
+            NDR_record_t NDR;
+            kern_return_t RetCode;
+        } __Reply__task_set_special_port_t __attribute__((unused));
+    reply -> 36 bytes
+    """
+    def set_special_port(self, in_header, in_content):
+        out_msg = MachMsg(self.ql)
+        (body,sp_name,sp_pad1,sp_pad2,sp_disp,sp_tpe,ndr,which)=unpack("<LLLHccQL",in_content[:4+12+8+4])
+        self.ql.log.debug("set_special_port: ndr: 0x{:x} body: {} name: 0x{:x} which: {}".format(ndr,body,sp_name,which))
+        out_msg.header.msgh_bits = 0x0001200
+        out_msg.header.msgh_size = 36
+        out_msg.header.msgh_remote_port = 0x00000000
+        out_msg.header.msgh_local_port = self.ql.os.macho_mach_port.name
+        out_msg.header.msgh_voucher_port = 0
+        out_msg.header.msgh_id = in_header.msgh_id+100
+        out_msg.content = pack("<Q", ndr)
+        out_msg.content += pack("<L", 0) #retcode
+        return out_msg
 
     def get_special_port(self, in_header, in_content):
         out_msg = MachMsg(self.ql)

@@ -404,6 +404,7 @@ arm64_syscall_table = {
     493: 'grab_pgo_data',
     499: 'work_interval_ctl',
     536: 'shared_region_map_and_slide_2_np',
+    0x100002f:'mach_msg2_trap',
  0x1000032: 'thread_get_special_reply_port',
  0x1000046: 'host_create_mach_voucher_trap',
 }
@@ -772,6 +773,7 @@ x8664_syscall_table = {
     0x100001c: 'task_self_trap',
     0x100001d: 'host_self_trap',
     0x100001f: 'mach_msg_trap',
+    0x100002f:'mach_msg2_trap',
     0x1000032: 'thread_get_special_reply_port', #syscall_sw
     0x1000046: 'host_create_mach_voucher_trap',
     0x1000059: 'mach_timebase_info_trap',

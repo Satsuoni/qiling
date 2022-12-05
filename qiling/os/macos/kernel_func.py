@@ -538,6 +538,7 @@ class FileSystem():
 
     def get_common_attr(self, path, cmn_flags):
         real_path = self.vm_to_real_path(path)
+        self.ql.log.debug("Real path: {} flags: 0x{:x} auid {}".format(real_path,cmn_flags,cmn_flags&ATTR_CMN_UUID))
         if not os.path.exists(real_path):
             return None
         attr = b''
@@ -568,14 +569,22 @@ class FileSystem():
         if cmn_flags & ATTR_CMN_OBJID != 0:
             attr += pack("<Q", file_stat.st_ino)
             self.ql.log.debug("VnodeID :{}".format(file_stat.st_ino))
-
+        if cmn_flags & ATTR_CMN_UUID != 0:
+            for a in range(4):
+                attr += pack("<L", 0x512)
+            self.ql.log.debug("uuid attr :{}".format(attr))
+        
         # at last, add name 
         if cmn_flags & ATTR_CMN_NAME != 0:
             name_offset = len(attr) + 4
-            attr = pack("<L", name_offset) + attr
+            attr += pack("<L", name_offset) + attr
             attr += filename.encode("utf8")
             attr += b'\x00'
-        
+        if cmn_flags & ATTR_CMN_FULLPATH !=0:
+            name_offset = len(attr) + 4
+            attr += pack("<L", name_offset) + attr
+            attr += path.encode("utf8")
+            attr += b'\x00'
         self.ql.log.debug("Attr : {}".format(attr))
     
         return attr

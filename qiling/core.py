@@ -538,7 +538,7 @@ class Qiling(QlCoreHooks, QlCoreStructs):
     # Qiling APIS #
     ###############
 
-    def run(self, begin: Optional[int] = None, end: Optional[int] = None, timeout: int = 0, count: int = 0):
+    def run(self, begin: Optional[int] = None, end: Optional[int] = None, timeout: int = 0, count: int = 0, ):
         """Start binary emulation.
 
         Args:

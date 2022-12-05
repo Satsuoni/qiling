@@ -124,11 +124,15 @@ def ql_syscall_kernelrpc_mach_port_mod_refs_trap(ql, target, name, right, delta,
     pass
 
 # 0x18
+_cp_name=0x527
 def ql_syscall_kernelrpc_mach_port_construct_trap(ql, target, options, context, name, *args, **kw):
-    ql.log.debug("[mach] mach port construct trap(target: 0x%x, options: 0x%x, context: 0x%x, name: 0x%x)" % (
-        target, options, context, name
+    global _cp_name
+    ql.log.debug("[mach] mach port construct trap(target: 0x%x, options: 0x%x, context: 0x%x, name: 0x%x) => 0x%x" % (
+        target, options, context, name,_cp_name
     ))
-    pass
+    ql.mem.write(name,struct.pack("<L",_cp_name))
+    _cp_name+=1
+    return 0
 
 # 0x1a
 def ql_syscall_mach_reply_port(ql, *args, **kw):
@@ -160,14 +164,90 @@ def ql_syscall_host_self_trap(ql, *args, **kw):
     return port_manager.host_port.name
 
 # 0x1f
+MACH_SEND_MSG      =     0x00000001
+MACH_RCV_MSG       =     0x00000002
+MACH_RCV_TRAILER_SEQNO = 1
+MACH_RCV_TRAILER_SENDER = 2
+MACH_RCV_TRAILER_AUDIT = 3
+MACH_RCV_TRAILER_CTX  =  4
+MACH_RCV_TRAILER_AV   =  7
+MACH_RCV_TRAILER_LABELS =8
+# mach_msg_context_trailer_t : 60 bytes
+"""
+typedef struct {
+	mach_msg_trailer_type_t       msgh_trailer_type;
+	mach_msg_trailer_size_t       msgh_trailer_size;
+	mach_port_seqno_t             msgh_seqno;
+	security_token_t              msgh_sender;
+	audit_token_t                 msgh_audit;
+	mach_port_context_t           msgh_context;
+} mach_msg_context_trailer_t;
+total return is 108 bytes
+
+"""
+def MACH_RCV_TRAILER_ELEMENTS(x):
+    return (((x) & 0xf) << 24)
 def ql_syscall_mach_msg_trap(ql, args, opt, ssize, rsize, rname, timeout):
     ql.log.debug("[mach] mach_msg_trap(args: 0x%x opt: 0x%x, ssize: 0x%x, rsize: 0x%x, rname: 0x%x, timeout: %d)" % (
         args, opt, ssize, rsize, rname, timeout))
+    if ssize==0:
+        if opt&MACH_RCV_MSG!=0:
+            ql.log.debug("Receive msg only")
+            trailertype=(opt>>24) &0xf
+            hdr=MachMsgHeader(ql)
+            hdr.msgh_bits = 0x80001212
+            hdr.msgh_size = hdr.header_size
+            hdr.msgh_remote_port = 0x800
+            hdr.msgh_local_port = 0x512
+            hdr.msgh_voucher_port = 0
+            hdr.msgh_id = 50000
+            hdr.write_hdr_to_mem(args)
+            trailer_offset=args+hdr.header_size
+            if trailertype==MACH_RCV_TRAILER_CTX:
+                ql.mem.write(trailer_offset,struct.pack("<L",trailertype))
+                trailer_offset+=4
+                ql.mem.write(trailer_offset,struct.pack("<L",60))
+                trailer_offset+=4
+                ql.mem.write(trailer_offset,struct.pack("<L",1))
+                trailer_offset+=4
+                ql.mem.write(trailer_offset,struct.pack("<Q",0x512512))
+                trailer_offset+=8
+                for a in range(8): #audit token
+                    ql.mem.write(trailer_offset,struct.pack("<L",0x512))
+                    trailer_offset+=4
+                ql.mem.write(trailer_offset,struct.pack("<Q",0xf1faf1fadeadb00f))
+                trailer_offset+=8
+            else:
+                raise Exception("Unknown/unimplemented trailertype")
+            return -1 #try aborting for nw rather than implement kevent
+        else:
+            return -1
+        #no message... otherwise, zero should be supplied? 
+        pass
     mach_msg = MachMsg(ql)
     mach_msg.read_msg_from_mem(args, ssize)
     ql.log.debug("Recv-> Header: %s, ID: %d Content: %s" % (mach_msg.header,mach_msg.header.msgh_id, mach_msg.content))
     ql.os.macho_port_manager.deal_with_msg(mach_msg, args)
     return 0
+"""
+	PAD_ARG_(mach_vm_address_t, data);
+	PAD_ARG_(mach_msg_option64_t, options);
+	PAD_ARG_(uint64_t, msgh_bits_and_send_size);
+	PAD_ARG_(uint64_t, msgh_remote_and_local_port);
+	PAD_ARG_(uint64_t, msgh_voucher_and_id);
+	PAD_ARG_(uint64_t, desc_count_and_rcv_name);
+	PAD_ARG_(uint64_t, rcv_size_and_priority);
+	PAD_ARG_(uint64_t, timeout);
+"""
+def ql_syscall_mach_msg2_trap(ql, data,options,msgh_bits_and_send_size,msgh_voucher_and_id,desc_count_and_rcv_name,rcv_size_and_priority,timeout):
+    ql.log.debug("[mach] mach_msg2_trap(data: 0x%x opt: 0x%x, msgh_bits_and_send_size: 0x%x, msgh_voucher_and_id: 0x%x, desc_count_and_rcv_name: 0x%x,rcv_size_and_priority: 0x%x  timeout: %d)" % (
+        data, opt, msgh_bits_and_send_size, msgh_voucher_and_id, desc_count_and_rcv_name, rcv_size_and_priority,timeout))
+    raise Exception("Needs work...")
+    #mach_msg = MachMsg(ql)
+    #mach_msg.read_msg_from_mem(args, ssize)
+    #ql.log.debug("Recv-> Header: %s, ID: %d Content: %s" % (mach_msg.header,mach_msg.header.msgh_id, mach_msg.content))
+    #ql.os.macho_port_manager.deal_with_msg(mach_msg, args)
+    #return 0
 
 #170	AUE_CSOPS	ALL	{ int csops_audittoken(pid_t pid, uint32_t ops, user_addr_t useraddr, user_size_t usersize, user_addr_t uaudittoken); }
 def ql_syscall_csops_audittoken(ql, pid,ops,useraddr,usersize,audittoken):
@@ -259,6 +339,7 @@ def ql_syscall_getattrlist(ql, path, alist, attributeBuffer, bufferSize, options
     attrlist["fileattr"] = unpack("<L", ql.mem.read(alist + 16, 4))[0]
     attrlist["forkattr"] = unpack("<L", ql.mem.read(alist + 20, 4))[0]
     path_str = ql.os.utils.read_cstring(path)
+    relative_path = ql.os.path.transform_to_relative_path(path_str)
 
     ql.log.debug("bitmapcount: 0x%x, reserved: 0x%x, commonattr: 0x%x, volattr: 0x%x, dirattr: 0x%x, fileattr: 0x%x, forkattr: 0x%x\n" % (
         attrlist["bitmapcount"], attrlist["reserved"], attrlist["commonattr"], attrlist["volattr"], attrlist["dirattr"], attrlist["fileattr"], attrlist["forkattr"]
@@ -305,6 +386,7 @@ def sysctl_rdquad(ql,oldp, oldlenp, newp, val):
     if oldlenp==0:
         return -1
     ln=struct.unpack("<Q",ql.mem.read(oldlenp,8))[0]
+    ql.log.debug("Oldlen (rdquad): {}".format(ln))
     if ln<8:
         return -1
     if newp!=0:
@@ -312,19 +394,34 @@ def sysctl_rdquad(ql,oldp, oldlenp, newp, val):
     ql.mem.write(oldlenp,struct.pack("<Q",8))
     ql.mem.write(oldp,struct.pack("<Q",val))
     return 0
+def sysctl_rddword(ql,oldp, oldlenp, newp, val):
+    if oldlenp==0:
+        return -1
+    ln=struct.unpack("<Q",ql.mem.read(oldlenp,8))[0]
+    ql.log.debug("Oldlen (rddword): {}".format(ln))
+    if ln<4:
+        return -1
+    if newp!=0:
+        return -1
+    ql.mem.write(oldlenp,struct.pack("<Q",4))
+    ql.mem.write(oldp,struct.pack("<L",val))
+    return 0
 def sysctl_rdstr(ql,oldp, oldlenp, newp, strval):
     if oldlenp==0:
         return -1
     ln=struct.unpack("<Q",ql.mem.read(oldlenp,8))[0]
     if ln<len(strval):
         return -1
+    ql.log.debug("Oldlen: {}".format(ln))
     #if newp!=0:
     #    return -1
     ql.mem.write(oldlenp,struct.pack("<Q",len(strval)))
+    
     try:
-      ql.mem.write(oldp,bytes(strval))
+      wbytes=bytes(strval)+b"\x00"
     except TypeError:
-      ql.mem.write(oldp,bytes(strval,'utf8'))
+      wbytes=bytes(strval,'utf8')+b"\x00"
+    ql.mem.write(oldp,wbytes)
     return 0
 
 from qiling.os.macos.structs import *    
@@ -358,24 +455,69 @@ def ql_syscall_sysctl_kernel(ql, name, namelen, old, oldlenp, new_arg, newlen):
     if nm==KERN_USRSTACK64:  #LP64 user stack query
       ql.log.debug("LP64 user stack query")
       return sysctl_rdquad(ql,old,oldlenp,new_arg,0xff00ff00ff00)
+    elif nm==KERN_OSTYPE:
+      ql.log.debug("sysctl.OSType")
+      return sysctl_rdstr(ql,old,oldlenp,new_arg,'Darwin')  
+    elif nm==KERN_HOSTNAME:
+      ql.log.debug("sysctl.KERN_HOSTNAME")
+      return sysctl_rdstr(ql,old,oldlenp,new_arg,'hostmac')       
     elif nm==KERN_OSVERSION:
       ql.log.debug("sysctl.OSVersion")
       return sysctl_rdstr(ql,old,oldlenp,new_arg,'21G217')
+    elif nm==KERN_OSRELEASE:
+      ql.log.debug("sysctl.OSRelease")
+      return sysctl_rdstr(ql,old,oldlenp,new_arg,'21.6.0')
     elif nm==KERN_SAFEBOOT:
       ql.log.debug("sysctl. safe boot. Our boot is safe, though MacOsX may not be")
       return sysctl_rdquad(ql,old,oldlenp,new_arg,1)
+    elif nm==KERN_VERSION:
+        osv="Darwin Kernel Version 21.6.0: Thu Sep 29 20:12:57 PDT 2022; root:xnu-8020.240.7~1/RELEASE_X86_64"
+        ql.log.debug("sysctl.VERSION")
+        return sysctl_rdstr(ql,old,oldlenp,new_arg,osv)
     elif nm==KERN_PROC:
       return ql_syscall_sysctl_kernel_proc(ql,name+4,namelen-1, old, oldlenp, new_arg, newlen)
     ql.log.debug("sysctl_kernel unknown... {} ".format(nm))
+    raise Exception("fixme")
     return 0
+def arch2str(arch):
+    if arch==QL_ARCH.X86:
+        return "x86"
+    elif arch==QL_ARCH.X8664:
+        return "x86_64"
+    elif arch==QL_ARCH.ARM:
+        return "arm"
+    elif arch==QL_ARCH.ARM64:
+        return "arm64"
+    elif arch==QL_ARCH.MIPS:
+        return "mips"
+    elif arch==QL_ARCH.A8086:
+        return "a8086"
+    elif arch==QL_ARCH.EVM:
+        return "evm"
+    elif arch==QL_ARCH.CORTEX_M:
+        return "cortex_m"
+    elif arch==QL_ARCH.RISCV:
+        return "risc_v"
+    elif arch==QL_ARCH.RISCV64:
+        return "riscv_64"
+    elif arch==QL_ARCH.PPC:
+        return "ppc"
+
+    return "unkn"
 def ql_syscall_sysctl_hw(ql, name, namelen, old, oldlenp, new_arg, newlen):
     if namelen==0: return 0
     nm=struct.unpack("<I",ql.mem.read(name,4))[0]
     if nm==HW_PAGESIZE:  #pagesize
       ql.log.debug("pagesizequery")
-      return sysctl_rdquad(ql,old,oldlenp,new_arg,PAGE_SIZE)
+      return sysctl_rddword(ql,old,oldlenp,new_arg,PAGE_SIZE)
+    elif nm==HW_MACHINE:
+        machinestr=arch2str(ql.arch.type)
+        ql.log.debug("machine: {}".format(machinestr))
+        return sysctl_rdstr(ql,old,oldlenp,new_arg,machinestr)
     ql.log.debug("sysctl_hw unknown... {} ".format(nm)) 
     return 0
+
+
 # 0xca
 def ql_syscall_sysctl(ql, name, namelen, old, oldlenp, new_arg, newlen):
     ql.log.debug("sysctl(name: 0x%x, namelen: 0x%x, old: 0x%x, oldlenp: 0x%x, new: 0x%x, newlen: 0x%x)" % (
@@ -432,7 +574,8 @@ def ql_syscall_proc_info(ql, callnum, pid, flavor, arg, buff, buffer_size):
         elif  flavor==PROC_PIDUNIQIDENTIFIERINFO:  #adds uuid to PROC_PIDTBSDINFO
             info=ProcBSDInfo(ql)
             info.write_to_addr(buff)
-        
+            return buffer_size
+            #ql.mem.write(retval,struct.pack("<Q",buffer_size))
             #ql.mem.write(buffer_size,struct.pack("<Q",info.sizeof))
         pass
     return 0

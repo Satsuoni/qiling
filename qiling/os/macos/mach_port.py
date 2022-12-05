@@ -26,7 +26,7 @@ class MachMsgHeader():
         self.msgh_size = None
         self.msgh_remote_port = None
         self.msgh_local_port = None
-        self.msgh_voucher_port = None
+        self.msgh_voucher_port = 0
         self.msgh_id = None
     
     def read_header_from_mem(self, addr):
@@ -37,7 +37,13 @@ class MachMsgHeader():
         self.msgh_voucher_port = unpack("<L", self.ql.mem.read(addr + 0x10, 0x4))[0]
         self.msgh_id = unpack("<L", self.ql.mem.read(addr + 0x14, 0x4))[0]
         # print("size !!!!! {}".format(self.msgh_size))
-
+    def write_hdr_to_mem(self, addr):
+        self.ql.mem.write(addr, pack("<L", self.msgh_bits))
+        self.ql.mem.write(addr + 0x4, pack("<L", self.msgh_size))
+        self.ql.mem.write(addr + 0x8, pack("<L", self.msgh_remote_port))
+        self.ql.mem.write(addr + 0xc, pack("<L", self.msgh_local_port))
+        self.ql.mem.write(addr + 0x10, pack("<L", self.msgh_voucher_port))
+        self.ql.mem.write(addr + 0x14, pack("<L", self.msgh_id))
     # def __str__(self):
     #     return "[MachMsg] bits :{}, size:{}, remote port:{}, local port:{}, voucher port:{}, id:{}".format(
     #         self.msgh_bits,
@@ -61,6 +67,9 @@ class MachMsg():
     
     def read_msg_from_mem(self, addr, size):
         self.header = self.read_msg_header(addr, size)
+        if size==0:
+            self.header = self.read_msg_header(addr, 24)
+        self.ql.log.debug("Mach msg header: msgh_id: {} size: {} remoteport: 0x{:x}  localport: 0x{:x}".format(self.header.msgh_id,self.header.msgh_size,self.header.msgh_remote_port,self.header.msgh_local_port))
         # between header and content is 4 byte \x00
         self.content = self.read_msg_content(addr + self.header.header_size, size - self.header.header_size)
 
@@ -95,6 +104,7 @@ class MachPort():
         self.name = port_name
         pass
 
+#from https://github.com/duo-labs/apple-t2-xpc/blob/master/xpc_types.py
 
 import struct 
 #import hexdump as hxdump
@@ -1043,10 +1053,16 @@ class MachPortManager():
         elif msg.header.msgh_id == 3405:
             out_msg = self.ql.os.macho_task_server.task_info(msg.header, msg.content)
             out_msg.write_msg_to_mem(addr)
-
+        elif msg.header.msgh_id==3410:
+            out_msg = self.ql.os.macho_task_server.set_special_port(msg.header, msg.content)
+            out_msg.write_msg_to_mem(addr)      
+        elif msg.header.msgh_id==3603:
+            out_msg = self.ql.os.macho_task_server.thread_get_state(msg.header, msg.content)
+            out_msg.write_msg_to_mem(addr)   
         elif msg.header.msgh_id == 8000:#task_restartable_ranges_register
             out_msg = self.ql.os.macho_task_server.restartable_ranges_register(msg.header, msg.content)
             out_msg.write_msg_to_mem(addr)   
+
         elif  msg.header.msgh_id >=0x40000000:
             out_msg=try_xpc_bollocks(self.ql,msg.header, msg.content)
             out_msg.write_msg_to_mem(addr)  
