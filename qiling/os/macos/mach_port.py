@@ -1019,6 +1019,15 @@ def try_xpc_bollocks(ql,in_header, in_content):
 # Mach Port Manager : 
 #   1. handle mach msg
 #   2. register some Host Port
+
+"""
+ self.msgh_bits,
+    #         self.msgh_size,
+    #         self.msgh_remote_port,
+    #         self.msgh_local_port,
+    #         self.msgh_voucher_port,
+    #         self.msgh_id,
+"""
 class MachPortManager():
 
     def __init__(self, ql, my_port):
@@ -1030,7 +1039,7 @@ class MachPortManager():
         self.my_port = my_port
 
     def deal_with_msg(self, msg, addr):
-        self.ql.log.debug("Message header: remote port: 0x{:x} local port: 0x{:x}".format(msg.header.msgh_remote_port,msg.header.msgh_local_port))
+        self.ql.log.debug("Message header: remote port: 0x{:x} local port: 0x{:x} bits: 0x{:x}".format(msg.header.msgh_remote_port,msg.header.msgh_local_port,msg.header.msgh_bits))
         if msg.header.msgh_id == 200:
             # host info
             out_msg = self.ql.os.macho_host_server.host_info(msg.header, msg.content)

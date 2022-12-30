@@ -141,6 +141,16 @@ TASK_AUDIT_TOKEN      =          15
 TASK_EXTMOD_INFO   =19
 ARM_DEBUG_STATE32    =    14
 ARM_DEBUG_STATE64    =   15
+TASK_DYLD_INFO       =     17
+"""
+struct task_dyld_info {
+	mach_vm_address_t       all_image_info_addr;
+	mach_vm_size_t          all_image_info_size;
+	integer_t               all_image_info_format;
+};
+typedef struct task_dyld_info   task_dyld_info_data_t;
+typedef struct task_dyld_info   *task_dyld_info_t;
+"""
 """
 x86_debug_state64_t - 64 bytes
 struct vm_extmod_statistics {
@@ -305,7 +315,13 @@ class MachTaskServer():
             for a in range(4):
                 out_msg.content +=pack("<I", 0x512) 
             for a in range(6):
-                out_msg.content +=pack("<Q", 0)             
+                out_msg.content +=pack("<Q", 0)   
+        elif flavor==TASK_DYLD_INFO:
+                 self.ql.log.debug("TASK_DYLD_INFO")
+                 out_msg.content +=pack("<Q", self.ql.s_all_imageinfo_addr) #all_image_info_addr
+                 out_msg.content +=pack("<Q", self.ql.s_all_imageinfo_size) #all_image_info_size
+                 out_msg.content +=pack("<L", 0x1)#all_image_info_format
+                 out_msg.content +=pack("<L", 0x0) #padding
         else:
             raise Exception("taskinfo flavor {} unimplemented".format(flavor))
 

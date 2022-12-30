@@ -26,6 +26,12 @@ class MachoParser:
         self.header_address = 0x0
         for seg in self.segments:
             # find page zero
+            ql.log.debug("MachoParse: segm: {}".format(seg.name))
+            for sect in seg.sections:
+              if sect.name.replace("\x00","")=="__all_image_info":  
+                ql.log.debug("MachoParse: sect: {} 0x{:x} {} {}".format(sect.name,sect.address,sect.size,sect.content))
+              else:
+                ql.log.debug("MachoParse: sect: {} 0x{:x} {}".format(sect.name,sect.address,sect.size ))
             if seg.vm_address == 0 and seg.file_size == 0:
                 ql.log.info("PageZero Size: {:X}".format(seg.vm_size))
                 self.page_zero_size = seg.vm_size
@@ -148,7 +154,7 @@ class MachoParser:
 
     def get_segment(self, name):
         for seg in self.segments:
-            if seg.name == name:
+            if seg.name==name or seg.name.replace("\x00","") == name:
                 return seg
         return None
 

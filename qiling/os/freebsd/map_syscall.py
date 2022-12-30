@@ -265,7 +265,7 @@ x8664_syscall_table = {
     391: 'lchflags',
     392: 'uuidgen',
     393: 'sendfile',
-    394: 'mac_syscall',
+    394: 'pselect',
     395: 'freebsd11_getfsstat',
     396: 'freebsd11_statfs',
     397: 'freebsd11_fstatfs',

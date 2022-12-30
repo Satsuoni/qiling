@@ -110,11 +110,22 @@ def ql_syscall_kernelrpc_mach_vm_map_trap(ql, target, address, size, mask, flags
     ql.mem.map(vmmap_address, vmmap_end - vmmap_address)
     ql.mem.write(address, struct.pack("<Q", vmmap_address))
     return KERN_SUCCESS
-
+mport__=0x680
+def ql_syscall_kernelrpc_mach_port_allocate_trap(ql, task, right, name):
+    global mport__
+    ql.log.debug("[mach] kernelrpc_mach_port_allocate_trap task: 0x{:x} right:  0x:{:x} name: 0x{:x} mp: {:x}".format(task,right,name,mport__))
+    ql.mem.write(name,struct.pack("<L", mport__))
+    mport__+=1
+    return KERN_SUCCESS
 # 0x12
-def ql_syscall_kernelrpc_mach_port_deallocate_trap(ql, *args, **kw):
+def ql_syscall_kernelrpc_mach_port_deallocate_trap(ql, port,*args, **kw):
     ql.log.debug("[mach] mach port deallocate trap")
-
+    return KERN_SUCCESS
+#381	AUE_MAC_SYSCALL	ALL	{ int __mac_syscall(char *policy, int call, user_addr_t arg); }
+def ql_syscall_mac_syscall(ql,policy,call,arg):
+    pol = ql.os.utils.read_cstring(policy)
+    ql.log.debug("Mac-syscall: policy: {} call: {} arg:0x{:x}".format(pol,call,arg))
+    return 0
 # 0x13
 def ql_syscall_kernelrpc_mach_port_mod_refs_trap(ql, target, name, right, delta, *args, **kw):
     ql.log.debug("[mach] mach port mod refs trap(target: 0x%x, name: 0x%x, right: 0x%x, delta: 0x%x)" % (
@@ -122,7 +133,12 @@ def ql_syscall_kernelrpc_mach_port_mod_refs_trap(ql, target, name, right, delta,
     ))
     return 0
     pass
-
+#344	AUE_GETDIRENTRIES64	ALL	{ user_ssize_t getdirentries64(int fd, void *buf, user_size_t bufsize, off_t *position) NO_SYSCALL_STUB; }
+def ql_syscall_getdirentries64(ql,fd,buf,bufsize,position):
+    ql.log.debug("getdirentries called, bufsize: {}".format(bufsize)) 
+    #just empty directories for now
+    ql.log.warn("getdirentries stubbed out")
+    return 0
 # 0x18
 _cp_name=0x527
 def ql_syscall_kernelrpc_mach_port_construct_trap(ql, target, options, context, name, *args, **kw):
@@ -183,6 +199,16 @@ typedef struct {
 	mach_port_context_t           msgh_context;
 } mach_msg_context_trailer_t;
 total return is 108 bytes
+typedef struct{
+	mach_msg_trailer_type_t       msgh_trailer_type;
+	mach_msg_trailer_size_t       msgh_trailer_size;
+	mach_port_seqno_t             msgh_seqno;
+	security_token_t              msgh_sender;
+	audit_token_t                 msgh_audit;
+	mach_port_context_t           msgh_context;
+	mach_msg_filter_id            msgh_ad;
+	msg_labels_t                  msgh_labels;
+} mach_msg_mac_trailer_t;
 
 """
 def MACH_RCV_TRAILER_ELEMENTS(x):
@@ -217,8 +243,13 @@ def ql_syscall_mach_msg_trap(ql, args, opt, ssize, rsize, rname, timeout):
                     trailer_offset+=4
                 ql.mem.write(trailer_offset,struct.pack("<Q",0xf1faf1fadeadb00f))
                 trailer_offset+=8
+            elif trailertype==MACH_RCV_TRAILER_AV: #maybe libdispatch?
+            #trailer 68 bytes
+                ql.log.debug("MACH_RCV_TRAILER_AV : maybe part of libdispatch?")
             else:
-                raise Exception("Unknown/unimplemented trailertype")
+                ql.log.debug("Unknown/unimplemented trailertype")
+                pass
+                #raise Exception("Unknown/unimplemented trailertype")
             return -1 #try aborting for nw rather than implement kevent
         else:
             return -1
@@ -538,10 +569,23 @@ def ql_syscall_sysctl(ql, name, namelen, old, oldlenp, new_arg, newlen):
     return KERN_SUCCESS
 
 # 0x112
+#osvariant_status: 8070732011310449290
 def ql_syscall_sysctlbyname(ql, name, namelen, old, oldlenp, new_arg, newlen):
     ql.log.debug("sysctlbyname(name: 0x%x, namelen: 0x%x, old: 0x%x, oldlenp: 0x%x, new: 0x%x, newlen: 0x%x)" % (
         name, namelen, old, oldlenp, new_arg, newlen
     ))
+    aname=ql.os.utils.read_cstring(name) 
+    ql.log.debug("name: {}".format(aname))
+    npath=aname.lower().split('.')
+    if npath[0]=='kern':
+        if npath[1]=="osvariant_status":
+            return sysctl_rdquad(ql,old,oldlenp,new_arg,8070732011310449290)
+        elif npath[1]=="secure_kernel":
+            return sysctl_rddword(ql,old,oldlenp,new_arg,1)
+        elif npath[1]=="osproductversion":
+            return sysctl_rdstr(ql,old,oldlenp,new_arg,'12.6.1')
+    raise Exception("Unimplemented name")
+
     return KERN_SUCCESS
 
 # 0x126
@@ -580,6 +624,9 @@ def ql_syscall_proc_info(ql, callnum, pid, flavor, arg, buff, buffer_size):
         pass
     return 0
 def ql_syscall_pthread_sigmask(ql,how,set,oldset):
+    return 0
+
+def ql_syscall_workq_kernreturn(ql,options,  item,  affinity,  prio):
     return 0
 
 def ql_syscall_pthread_kill(ql,thread,signal):
@@ -661,6 +708,10 @@ def ql_syscall_read_nocancel(ql, fd,  buf,  nbytes):
     return len(dat)
 def ql_syscall_close_nocancel(ql,fd):
     return ql.os.fd[fd].close()
+def ql_syscall_workq_open(ql):
+    ql.log.debug("worq_open")
+    return 0
+
 def ql_syscall_shm_open(ql, filename, flags, mode, *args, **kw):
     path = ql.mem.string(filename)
     relative_path = ql.os.path.transform_to_relative_path(path)
@@ -719,6 +770,44 @@ def ql_syscall_thread_get_special_reply_port(ql):
     #thread_port = port_manager.get_thread_port(ql.os.macho_thread)
     ql.log.debug("[mach] thread_get_special_reply_port: ret: %s" % (ql.os.macho_mach_port.name))
     return ql.os.macho_mach_port.name
+__oactivity_id=1
+def ql_syscall_mach_generate_activity_id(ql,target,count,aid):
+    global __oactivity_id
+    __oactivity_id+=count
+    ql.log.debug("Generating id {} count {} target: {}".format(__oactivity_id,count,target))
+    ql.mem.write(aid,struct.pack("<Q",__oactivity_id))
+    return 0
+
+"""
+	uint64_t        ident;          /* identifier for this event */
+	int16_t         filter;         /* filter for event */
+	uint16_t        flags;          /* general flags */
+	int32_t         qos;            /* quality of service */
+	uint64_t        udata;          /* opaque user data identifier */
+	uint32_t        fflags;         /* filter-specific flags */
+	uint32_t        xflags;         /* extra filter-specific flags */
+	int64_t         data;           /* filter-specific data */
+	uint64_t        ext[4];         /* filter-specific extensions */
+};
+"""    
+#374	AUE_NULL	ALL	{ int kevent_qos(int fd, const struct kevent_qos_s *changelist, int nchanges, struct kevent_qos_s *eventlist, int nevents, void *data_out, size_t *data_available, unsigned int flags); }
+def ql_syscall_kevent_qos(ql,fd,changelist,nchanges,eventlist,nevents,data_out):
+    #flags...
+    #data_available
+    flags = struct.unpack("<Q", ql.mem.read(ql.arch.regs.rsp+8, 8))[0]
+    ql.log.debug("Flags: 0x{:x}".format(flags))
+    frm="<QHHLQIIQQQQQ"
+    sz=struct.calcsize(frm)
+    for a in range(nchanges):
+        (ident,fil,flags,qos,udata,fflags,xflags,data,ext0,ext1,ext2,ext3)=struct.unpack(frm,ql.mem.read(changelist+a*sz,sz))
+        ql.log.debug("Change ident: {} filter: {} udata:0x{:x}".format(ident,fil,udata)) 
+    return 0
+#375	AUE_NULL	ALL	{ int kevent_id(uint64_t id, const struct kevent_qos_s *changelist, int nchanges, struct kevent_qos_s *eventlist, int nevents, void *data_out, size_t *data_available, unsigned int flags); }
+def ql_syscall_kevent_id(ql,id,changelist,nchanges,eventlist,nevents):#...
+    #flags...
+    flags = struct.unpack("<Q", ql.mem.read(ql.arch.regs.rsp, 8))[0]
+    ql.log.debug("Flags: 0x{:x}".format(flags))
+    return 0
 
 # 0x1b6
 def ql_syscall_shared_region_map_and_slide_np(ql, fd, count, mappings_addr, slide, slide_start, slide_size):

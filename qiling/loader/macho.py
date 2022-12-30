@@ -417,6 +417,17 @@ class QlLoaderMACHO(QlLoader):
                 self.ql.log.info("ProcEntry: {}".format(hex(self.proc_entry)))
                 self.entry_point = self.proc_entry + self.dyld_slide
                 self.ql.log.info("Dyld entry point: {}".format(hex(self.entry_point)))
+                dlld=self.dyld_file.get_segment("__DATA")
+                if dlld is not None :
+                  self.ql.log.info("Dyld __DATA {}".format(dlld))
+                  va=dlld.vm_address
+                  for sec in dlld.sections:
+                    #self.ql.log.debug(sec.name)
+                    if sec.name.replace("\x00","")=="__all_image_info":
+                        self.ql.log.debug("DYLD all_image data: 0x{:x} {}".format(sec.offset+ self.dyld_slide,sec.size))
+                        self.ql.s_all_imageinfo_addr=sec.offset+ self.dyld_slide
+                        self.ql.s_all_imageinfo_size=sec.size
+                  #s Segment()
             else:
                 self.entry_point = self.proc_entry + self.slide
             self.ql.log.info("Binary Entry Point: 0x{:X}".format(self.binary_entry))
